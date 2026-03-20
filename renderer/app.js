@@ -232,51 +232,30 @@ wv.setAttribute('src', url || 'about:blank');
 wv.setAttribute('allowpopups', '');
 wv.setAttribute('webpreferences', 'nativeWindowOpen=no');
 wv.setAttribute('partition', 'persist:massapply');
-// Spoof useragent to prevent Google from blocking sign-in by detecting Electron/Custom browser
-wv.setAttribute('useragent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+// Use Chrome/134 UA to match the session-level UA set in main.js (CLEAN_UA)
+// All tabs share the same partition so Google sign-in cookies apply everywhere.
+wv.setAttribute('useragent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36');
 wv.style.width = '100%';
 wv.style.height = '100%';
 
 // *** CRITICAL: Attach new-window handler BEFORE appending to DOM ***
 wv.addEventListener('new-window', (e) => {
-  console.log('🔗 new-window intercepted:', e.url, 'disposition:', e.disposition);
-  
-  // Auth/OAuth URLs — let the main process handle them as real popup windows
-  // so window.opener is preserved and sign-in callbacks work correctly.
-  const authUrl = e.url || '';
-  const isAuth = 
-    authUrl.includes('accounts.google.com') ||
-    authUrl.includes('accounts.youtube.com') ||
-    authUrl.includes('appleid.apple.com') ||
-    authUrl.includes('login.microsoftonline.com') ||
-    authUrl.includes('github.com/login/oauth') ||
-    authUrl.includes('api.twitter.com/oauth') ||
-    authUrl.includes('linkedin.com/oauth') ||
-    authUrl.includes('/oauth') ||
-    authUrl.includes('/signin') ||
-    authUrl.includes('/auth/');
-
-  if (isAuth) {
-    // Don't create a tab — the main process setWindowOpenHandler
-    // will allow a real popup window for OAuth.
-    console.log('🔓 Auth popup — letting main process handle:', authUrl);
-    return;
-  }
-
-  // Non-auth URLs: open in a new tab
+  // Always open in a new tab inside the app.
+  // This is the KEY fix for Google sign-in:
+  //   - Opening as an external popup = Google blocks it ("Couldn't sign you in")
+  //   - Opening inside a webview tab = works perfectly, cookies shared via persist:massapply
   e.preventDefault();
-  const newTabId = createTab(e.url, 'Loading...');
+  const newUrl = e.url || '';
+  if (!newUrl || newUrl === 'about:blank') return;
+  console.log('🔗 new-window → opening inside app tab:', newUrl);
+  const newTabId = createTab(newUrl, 'Loading...');
   switchTab(newTabId);
-  toast('Opened in new tab', 'info');
 });
 
 // Append to container AFTER attaching event listeners
 webviewContainer.appendChild(wv);
 
 // Standard webview events
-wv.addEventListener('did-start-loading', () => {
-  updateTabLoading(id, true);
-});
 
 wv.addEventListener('did-stop-loading', () => {
   updateTabLoading(id, false);
@@ -299,6 +278,19 @@ wv.addEventListener('did-navigate-in-page', (e) => {
     if (tab) tab.url = e.url;
     if (activeTabId === id) addressInput.value = e.url;
   }
+});
+
+// Run stealth scripts as early as possible
+wv.addEventListener('did-start-loading', () => {
+  updateTabLoading(id, true);
+  wv.executeJavaScript(`
+    try {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+      window.chrome = window.chrome || { runtime: {} };
+    } catch(e) {}
+  `);
 });
 
 // Inject window.open interceptor + context menu after DOM is ready
@@ -330,6 +322,33 @@ wv.addEventListener('dom-ready', () => {
           window.open(link.href, '_blank');
         }
       }, true);
+
+      // Fast double-click detection (200 ms window) on link clicks.
+      // The native 'dblclick' event only fires AFTER the OS-level double-click
+      // timeout (~300-500 ms), causing a visible delay. By tracking clicks
+      // manually we fire on the 2nd click itself — instant response.
+      let _lastClickTime = 0;
+      let _lastClickEl   = null;
+      document.addEventListener('click', function(e) {
+        const link = e.target.closest('a');
+        if (!link || !link.href) return;
+        if (link.href.startsWith('javascript:') || link.href === '#') return;
+
+        const now = Date.now();
+        if (now - _lastClickTime < 200 && _lastClickEl === link) {
+          // Second click within 200 ms → treat as double-click
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('Fast double-click navigate:', link.href);
+          window.location.href = link.href;
+          _lastClickTime = 0;   // reset so a 3rd click doesn't re-trigger
+          _lastClickEl   = null;
+        } else {
+          _lastClickTime = now;
+          _lastClickEl   = link;
+        }
+      }, true);
+
 
       // Right-click context menu data capture
       document.addEventListener('contextmenu', function(e) {
@@ -468,7 +487,10 @@ wv.addEventListener('will-download', (e, item) => {
       if (activeTabId) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
         if (wv) {
-          wv.src = url;
+          // loadURL() is imperative and fires immediately.
+          // wv.src = url is declarative — Electron processes it asynchronously
+          // through the attribute-change cycle, causing the visible lag.
+          wv.loadURL(url);
           const tab = tabs.find(t => t.id === activeTabId);
           if (tab) tab.url = url;
           saveTabs();
@@ -843,6 +865,85 @@ if (linkGeminiKey) {
     toast('Opening Google AI Studio...', 'info');
   });
 }
+
+  // ═══ CACHE & SITE DATA ═══
+  const btnShowCache = $('#btn-show-cache');
+  const btnClearCache = $('#btn-clear-cache');
+  const siteDataList = $('#site-data-list');
+
+  if (btnShowCache && btnClearCache && siteDataList) {
+    btnShowCache.addEventListener('click', async () => {
+      siteDataList.style.display = 'block';
+      siteDataList.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">Loading...</div>';
+      try {
+        const domains = await window.api.appData.getSiteData();
+        if (!domains || domains.length === 0) {
+          siteDataList.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">No site data found.</div>';
+          return;
+        }
+        siteDataList.innerHTML = '';
+        domains.forEach(domain => {
+          const row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.justifyContent = 'space-between';
+          row.style.alignItems = 'center';
+          row.style.padding = '6px 4px';
+          row.style.borderBottom = '1px solid #333';
+          
+          row.innerHTML = `
+            <div style="display:flex;align-items:center;gap:6px;overflow:hidden;">
+              <span class="material-icons-round" style="font-size:16px;color:#888;">public</span>
+              <span style="font-size:12px;color:#ddd;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;">${escapeHtml(domain)}</span>
+            </div>
+            <button class="cache-del-btn" title="Delete" style="background:transparent;border:none;color:#ff5252;cursor:pointer;padding:2px;display:flex;align-items:center;">
+              <span class="material-icons-round" style="font-size:18px;">delete</span>
+            </button>
+          `;
+          
+          row.querySelector('.cache-del-btn').addEventListener('click', async () => {
+            row.style.opacity = '0.5';
+            row.style.pointerEvents = 'none';
+            await window.api.appData.clearSiteData(domain);
+            row.remove();
+            if (siteDataList.children.length === 0) {
+              siteDataList.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">No site data found.</div>';
+            }
+          });
+          
+          siteDataList.appendChild(row);
+        });
+      } catch(e) {
+        siteDataList.innerHTML = `<div style="color:#ff5252;font-size:12px;">Error: ${e.message}</div>`;
+      }
+    });
+
+    btnClearCache.addEventListener('click', async () => {
+      if (confirm("Are you sure you want to clear all cookies, cache, and site data? This will also reload the browser to reset your session.")) {
+        btnShowCache.disabled = true;
+        btnClearCache.disabled = true;
+        btnClearCache.innerHTML = '<span class="material-icons-round">hourglass_empty</span> Resetting...';
+        
+        await window.api.appData.clearAllSiteData();
+        
+        siteDataList.style.display = 'block';
+        siteDataList.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">Session reset and all site data cleared.</div>';
+        
+        // Reload the webview to start fresh
+        try {
+          if (wv && typeof wv.reload === 'function') {
+            wv.reload();
+          }
+        } catch (err) {
+          console.log('Error reloading webview:', err);
+        }
+
+        toast('Session Reset & Storage Cleared', 'success');
+        btnShowCache.disabled = false;
+        btnClearCache.disabled = false;
+        btnClearCache.innerHTML = '<span class="material-icons-round">restart_alt</span> Reset & Clear Cache';
+      }
+    });
+  }
 
   $('#btn-save-settings').addEventListener('click', async () => {
     settings = {
@@ -1378,7 +1479,7 @@ if (linkGeminiKey) {
 
       // Step 5.5: Handle file upload (resume) — Multi-strategy approach
       if (result.hasFileUpload && result.fileUploadSelectors.length > 0) {
-        const resumePath = settings.resumePath || '';
+        const resumePath = profile.resumePath || settings.resumePath || '';
         if (resumePath) {
           log('accent', `📎 Uploading resume: ${resumePath}`);
           statusText.textContent = 'Uploading resume...';
@@ -1390,6 +1491,15 @@ if (linkGeminiKey) {
             try {
               let uploadResult = null;
               let uploadMethod = '';
+              let pathToUpload = resumePath;
+              
+              if (fileField.label && fileField.label.toLowerCase().includes('cover letter')) {
+                const coverLetterPath = profile.coverLetterPath || '';
+                if (coverLetterPath) {
+                  pathToUpload = coverLetterPath;
+                  log('accent', `📎 Uploading cover letter: ${pathToUpload}`);
+                }
+              }
 
               // Strategy 1: Smart DataTransfer injection (works on most standard forms)
               if (!isGoogleForm) {
@@ -1397,7 +1507,7 @@ if (linkGeminiKey) {
                 uploadResult = await window.api.engine.smartUploadFile({
                   webContentsId,
                   selector: fileField.selector,
-                  filePath: resumePath
+                  filePath: pathToUpload
                 });
                 uploadMethod = 'DataTransfer';
               }
@@ -1408,7 +1518,7 @@ if (linkGeminiKey) {
                 uploadResult = await window.api.engine.uploadFile({
                   webContentsId,
                   selector: fileField.selector,
-                  filePath: resumePath
+                  filePath: pathToUpload
                 });
                 uploadMethod = 'CDP';
               }
@@ -1418,7 +1528,7 @@ if (linkGeminiKey) {
                 log('info', `📎 Trying Google Forms upload for "${fileField.label}"...`);
                 uploadResult = await window.api.engine.googleFormsUpload({
                   webContentsId,
-                  filePath: resumePath
+                  filePath: pathToUpload
                 });
                 uploadMethod = 'GoogleForms';
               }
@@ -1454,15 +1564,22 @@ if (linkGeminiKey) {
           // Primary: Use CDP native click for truly trusted events
           const webContentsId = wv.getWebContentsId();
           const isGF = currentUrl.includes('docs.google.com/forms');
+          const isWF = currentUrl.includes('wellfound.com') || currentUrl.includes('angel.co');
 
-          // Find the submit button selector
-          let submitSelector = isGF
-            ? '[jsname="M2UYVd"], [aria-label="Submit"]'
-            : 'button[type="submit"], input[type="submit"]';
+          // Determine the best submit selector for this page type
+          let nativeClickSelector;
+          if (isGF) {
+            nativeClickSelector = '[jsname="M2UYVd"]';
+          } else if (isWF) {
+            // Wellfound modal submit button — exact data-test attribute
+            nativeClickSelector = '[data-test="JobApplicationModal--SubmitButton"]';
+          } else {
+            nativeClickSelector = 'button[type="submit"]';
+          }
 
           const nativeResult = await window.api.engine.nativeClick({
             webContentsId,
-            selector: isGF ? '[jsname="M2UYVd"]' : 'button[type="submit"]'
+            selector: nativeClickSelector
           });
 
           if (nativeResult.success) {
@@ -1849,7 +1966,7 @@ if (linkGeminiKey) {
   // Build auto-submit script with proper mouse events for Google Forms
   function buildAutoSubmitScript() {
     return `
-      (function() {
+      (async function() {
         // Helper: scroll into view + real click sequence
         function realClick(el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1902,6 +2019,31 @@ if (linkGeminiKey) {
 
           return 'no submit button found (Google Form)';
         } else {
+          // ── Wellfound modal: specific data-test selector ──
+          const isWellfound = window.location.hostname.includes('wellfound.com') ||
+                              window.location.hostname.includes('angel.co');
+          if (isWellfound) {
+            const wfBtn = document.querySelector('[data-test="JobApplicationModal--SubmitButton"]');
+            if (wfBtn) {
+              // Scroll into view first — the modal may need to be scrolled
+              wfBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              // Wait for scroll to settle
+              await new Promise(r => setTimeout(r, 400));
+              realClick(wfBtn);
+              return 'submitted';
+            }
+            // Fallback: button containing "Send application" text
+            const allBtns = document.querySelectorAll('button');
+            for (const b of allBtns) {
+              if (b.textContent.trim().toLowerCase().includes('send application')) {
+                b.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                await new Promise(r => setTimeout(r, 400));
+                realClick(b);
+                return 'submitted';
+              }
+            }
+          }
+
           // Standard forms — try multiple approaches
           // 1. Standard submit button
           const submitBtn = document.querySelector(
@@ -1915,8 +2057,8 @@ if (linkGeminiKey) {
           const allBtns = document.querySelectorAll('button, [role="button"], a.btn');
           for (const b of allBtns) {
             const txt = b.textContent.trim().toLowerCase();
-            if (['submit', 'apply', 'send', 'save', 'continue', 'next'].includes(txt) ||
-                txt.includes('submit') || txt.includes('apply now')) {
+            if (['submit', 'apply', 'send application', 'send', 'save', 'continue', 'next'].includes(txt) ||
+                txt.includes('submit') || txt.includes('apply now') || txt.includes('send application')) {
               realClick(b);
               return 'submitted';
             }
@@ -2214,16 +2356,24 @@ if (linkGeminiKey) {
 
               // Handle file upload (resume)
               if (stepData.hasFileUpload && stepData.fileUploadSelectors.length > 0) {
-                const resumePath = settings.resumePath || '';
+                const resumePath = profile.resumePath || settings.resumePath || '';
                 if (resumePath) {
                   log('accent', `  📎 Uploading resume...`);
                   const webContentsId = wv.getWebContentsId();
                   for (const fileField of stepData.fileUploadSelectors) {
                     try {
+                      let pathToUpload = resumePath;
+                      if (fileField.label && fileField.label.toLowerCase().includes('cover letter')) {
+                        const coverLetterPath = profile.coverLetterPath || '';
+                        if (coverLetterPath) {
+                          pathToUpload = coverLetterPath;
+                          log('accent', `📎 Uploading cover letter...`);
+                        }
+                      }
                       const uploadResult = await window.api.engine.uploadFile({
                         webContentsId,
                         selector: fileField.selector,
-                        filePath: resumePath
+                        filePath: pathToUpload
                       });
                       if (uploadResult.success) {
                         log('success', `  ✅ Resume uploaded`);
@@ -2467,6 +2617,31 @@ if (linkGeminiKey) {
     d.textContent = String(s);
     return d.innerHTML;
   }
+
+  // ═══ WINDOW FOCUS — prevent address bar from stealing focus on tab switch ═══
+  function dismissAddressBarFocus() {
+    // Use a small timeout so Electron's internal focus management finishes first,
+    // then we reclaim focus away from the address bar.
+    setTimeout(() => {
+      if (document.activeElement === addressInput) {
+        addressInput.blur();
+        if (activeTabId) {
+          const wv = webviewContainer.querySelector(`#${activeTabId}`);
+          if (wv) {
+            try { wv.focus(); } catch(e) {}
+          }
+        }
+      }
+    }, 50);
+  }
+
+  // Fires when the user clicks back into the Electron window from another OS window
+  window.addEventListener('focus', dismissAddressBarFocus);
+
+  // Fires when page becomes visible again (e.g. switching virtual desktops / monitors)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) dismissAddressBarFocus();
+  });
 
   // ═══ INIT ═══
   async function init() {

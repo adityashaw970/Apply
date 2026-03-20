@@ -1,34 +1,80 @@
 {
-  "name": "mass-apply",
+  "name": "electron",
   "version": "1.0.0",
-  "description": "Mass job application automation with AI-powered form filling",
+  "description": "Chat application with AI integration",
   "main": "main.js",
- "scripts": {
-  "start": "electron .",
-  "dev": "SET NODE_NO_WARNINGS=1 && SET ELECTRON_ENABLE_LOGGING=0 && electron . --dev 2>nul",
-  "build": "electron-builder"
-},
-  "keywords": [
-    "job",
-    "automation",
-    "apply",
-    "electron"
-  ],
-  "author": "MassApply",
-  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "nodemon --watch . --exec \"electron .\"",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.massapply.app",
+    "productName": "MassApply",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist",
+      "!node_modules",
+      "!.git"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MassApply"
+    }
+  },
+  "devDependencies": {
+    "electron": "^39.2.6",
+    "electron-builder": "^26.4.0",
+    "electron-reloader": "^1.2.3",
+    "nodemon": "^3.1.0"
+  },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
-    "cors": "^2.8.6",
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.13.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "electron-store": "^8.1.0",
     "express": "^5.2.1",
     "puppeteer": "^21.11.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "socket.io": "^4.8.3"
-  },
-  "devDependencies": {
-    "electron": "^28.1.0",
-    "electron-reloader": "^1.2.3",
-     "nodemon": "^3.0.2"
+    "socket.io": "^4.8.1"
   }
 }

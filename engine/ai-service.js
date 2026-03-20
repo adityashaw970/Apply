@@ -94,11 +94,11 @@ class AIService {
 
     const prompt = this._buildPrompt(questions, jobContext, userProfile);
 
-    // Model priority list — try most capable first, fall back on failure
+    // Model priority list — try most capable/stable first, fall back on failure
     const MODEL_PRIORITY = [
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-1.5-flash-8b'
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-3-flash-preview'
     ];
 
     // Try each healthy key until one works
@@ -175,7 +175,7 @@ class AIService {
           if (isModelError) {
             // Model not available — try next model in priority list
             console.log(`⚠️ Model ${modelName} unavailable for key #${index + 1}, trying next model...`);
-            break; // break inner loop to try next model
+            continue; // continue inner loop to try next model
           }
 
           if (isRateLimit || is503Error) {
@@ -209,7 +209,7 @@ class AIService {
     console.error('❌ All API keys/models exhausted, generating intelligent fallback answers');
     return questions.map(q => ({
       label: q.label,
-      answer: this._generateFallbackAnswer(q, userProfile, jobContext),
+      answer: `[AI Fallback] ` + this._generateFallbackAnswer(q, userProfile, jobContext),
       error: 'AI service unavailable - using fallback'
     }));
   }
@@ -439,7 +439,8 @@ class AIService {
     prompt += '**Your Role:** You ARE the candidate. Answer using the candidate\'s actual profile data in FIRST PERSON ("I").\n\n';
     prompt += '**ANSWER FORMAT — MANDATORY:**\n';
     prompt += '- **Constraint/Error handling:** If a question label contains "(Constraint/Error: ...)", you MUST strictly follow it. If it says "Enter a whole number", return ONLY the number (e.g. "3" not "3 years").\n';
-    prompt += '- **Number/Decimal fields:** Return ONLY the bare number. Example: "3" or "8.5" or "0". If asked for a decimal, DO NOT provide a whole number. If asked for a whole number, DO NOT provide a decimal.\n';
+    prompt += '- **Number/Decimal fields:** Return ONLY the bare number. Example: "3" or "8.5" or "0". If asked for a decimal, DO NOT provide a whole number. If asked for a whole number, DO NOT provide a decimal. If a question asks skill rating and the field expects a decimal (0.0 to 10.0), return ONLY the number like "8.5"\n';
+    prompt += '- **Skill rating:** If asked "How good are you at X" with a number field, return a number between 1-10\n';
     prompt += '- **Yes/No questions:** Return ONLY "Yes" or "No". Never say "Yes, I have".\n';
     prompt += '- **Options Provided:** If the question provides "Available Options", YOUR ANSWER MUST BE EXACTLY ONE OF THOSE OPTIONS. Do not hallucinate variants. If no exact match, choose the safest/closest available option.\n';
     prompt += '- **Date fields:** Return ONLY the date in YYYY-MM-DD format\n';
@@ -449,6 +450,11 @@ class AIService {
     prompt += '- **Cover letter / "Why hire you" / "Tell about yourself":** 2-3 concise sentences MAX, always in FIRST PERSON. ONLY write a paragraph if the question EXPLICITLY asks for a cover letter or why you are a good fit. Otherwise, NEVER write a paragraph.\n';
     prompt += '- **Languages:** If asked for languages knowing you, state "English" if none are specified in the profile.\n';
     prompt += '- **Generic greeting fields (like "Hello"):** Respond with a brief professional greeting\n\n';
+    prompt += '⚠️ CRITICAL: Each question MUST receive a UNIQUE answer tailored to THAT specific question.\n';
+    prompt += 'Never give the same answer to two different questions.\n';
+    prompt += `- "What interests you about this company?" → Answer EXACTLY: "I am excited about ${jobCompany || 'this company'} because of the opportunity to work on innovative digital products and grow my skills in ${skillsStr}. With ${p.experience ? (String(p.experience).toLowerCase().includes('year') ? p.experience : p.experience + ' years') + ' of experience' : 'relevant experience'}, I believe I can contribute effectively to the team while learning from a dynamic environment."\n`;
+    prompt += '- "What is your experience with X?" → Specific experience/years answer\n';
+    prompt += '- "Describe a challenge you faced" → Specific story-based answer\n\n';
     prompt += '⚠️ DO NOT write full sentences for value-based questions (like "Language", "Phone", "Age"). If asked "Language", say "English". If asked "How many years...", say "1". NEVER hallucinate a cover letter paragraph into a short text field.\n\n';
 
     prompt += `## 🛑 SKILL QUESTIONS — VERY IMPORTANT\nThe candidate's EXACT listed skills are: **${skillsStr}**\n`;
@@ -588,12 +594,13 @@ class AIService {
     const company = jc.company || jc.title || 'this company';
     const jobTitle = jc.title || 'this position';
     const skills = p.skills || 'full-stack development';
-    const experience = p.experience ? `${p.experience} of experience` : 'relevant experience';
+    const experienceText = p.experience || '';
+    const experience = experienceText ? (experienceText.toLowerCase().includes('year') ? experienceText : `${experienceText} years`) + ' of experience' : 'relevant experience';
     const about = p.aboutMe || p.whyHire || '';
 
     // "What interests you..." / "Why do you want to work here..." / "Why this company..."
     if (label.includes('interest') || label.includes('why') || label.includes('motivat') ||
-      label.includes('excit') || label.includes('passion')) {
+      label.includes('excit') || label.includes('passion') || label.includes('what draws') || label.includes('why this company')) {
       if (about) {
         return about.substring(0, 500);
       }
@@ -613,9 +620,7 @@ class AIService {
 
     // "What are your strengths" / "What makes you a good fit"
     if (label.includes('strength') || label.includes('good fit') || label.includes('why hire') || label.includes('why should we')) {
-      if (p.whyHire) return p.whyHire.substring(0, 500);
-      return `My key strengths lie in ${skills}. I am a quick learner with ${experience}, and I am committed to delivering quality work. ` +
-        `I thrive in collaborative environments and am passionate about ${jobTitle}.`;
+      return p.whyHire || `My key strengths are ${skills}. I am a quick learner with ${experience}, and I am committed to delivering quality work. I thrive in collaborative environments and am passionate about ${jobTitle}.`;
     }
 
     // "What are your career goals" / "Where do you see yourself"
@@ -640,9 +645,13 @@ class AIService {
       return 'Yes';
     }
 
-    // Generic fallback
-    if (about) return about.substring(0, 300);
-    return `I am enthusiastic about ${jobTitle} at ${company} and believe my skills in ${skills} make me a strong candidate.`;
+    // Skill check
+    if (label.includes('experience with') || label.includes('proficient')) {
+      return '0';
+    }
+
+    // Generic fallback - keep it concise and context-free to avoid wrong long answers
+    return `N/A`;
   }
 
   /**
@@ -669,7 +678,7 @@ Respond with JSON only (no markdown, no code blocks):`;
       const { client, index } = this._getNextHealthyClient();
 
       try {
-        const model = client.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const model = client.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
         const chat = model.startChat({
           generationConfig: { maxOutputTokens: 2048, temperature: 0.1 }
         });

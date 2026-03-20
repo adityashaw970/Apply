@@ -438,6 +438,17 @@
         label = label + " (Constraint/Error: " + errorMsg.textContent.trim() + ")";
       }
 
+      const numInput = group.querySelector('input[type="number"]');
+      if (numInput) {
+        const min = numInput.getAttribute('min');
+        const step = numInput.getAttribute('step');
+        if (step && step.includes('.')) {
+          label += ' (Constraint/Error: Enter a decimal number)';
+        } else if (min !== null) {
+          label += ' (Constraint/Error: Enter a whole number)';
+        }
+      }
+
       const required = isRequired(group);
 
       // Check for file upload
@@ -519,7 +530,7 @@
           } else {
             unknownFields.push({ label, type: 'select', required, options: cappedOptions, selector: selectEl.id ? `#${selectEl.id}` : '' });
           }
-        } else if (!currentVal || currentVal === '' || currentVal === 'Select an option') {
+        } else if (!currentVal || currentVal === '' || currentVal === 'Select an option' || currentVal === 'Select') {
           const aiAnswer = AI_ANSWERS.find(a => a.label === label || label.toLowerCase().includes(a.label.toLowerCase()));
           if (aiAnswer && aiAnswer.answer) {
             const target = aiAnswer.answer.toLowerCase();

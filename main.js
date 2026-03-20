@@ -1,5 +1,10 @@
 const { app, BrowserWindow, ipcMain, session } = require('electron');
 
+// ─── Clean Chrome UA — strip 'Electron/' to pass Google sign-in checks ───
+// Electron 39 ships Chromium 134. Defined at the TOP so every handler can use it.
+const CLEAN_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+const CLEAN_SEC_CH_UA = '"Not)A;Brand";v="99", "Google Chrome";v="134", "Chromium";v="134"';
+
 // ─── Global crash guard for disposed Electron frames ───
 // This prevents the "Render frame was disposed before WebFrameMain" crash
 // from killing the entire app when a webview/popup is rapidly torn down.
@@ -7,9 +12,9 @@ process.on('uncaughtException', (err) => {
   if (
     err.message &&
     (err.message.includes('Render frame was disposed') ||
-     err.message.includes('WebFrameMain') ||
-     err.message.includes('ERR_FAILED') ||
-     err.message.includes('Object has been destroyed'))
+      err.message.includes('WebFrameMain') ||
+      err.message.includes('ERR_FAILED') ||
+      err.message.includes('Object has been destroyed'))
   ) {
     // Silently ignore — these are benign race conditions from torn-down webviews
     return;
@@ -18,30 +23,33 @@ process.on('uncaughtException', (err) => {
   console.error('\u274c Uncaught Exception:', err);
 });
 
-// CRITICAL: Add these BEFORE anything else
+// ─── Command-line switches (BEFORE app ready) ───
 app.commandLine.appendSwitch('ignore-certificate-errors', 'true');
 app.commandLine.appendSwitch('allow-insecure-localhost', 'true');
-app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
+// NOTE: Do NOT disable OutOfBlinkCors — it breaks Google OAuth sign-in
+// NOTE: Do NOT set disable-blink-features=AutomationControlled here;
+//       it conflicts with some Google auth checks in newer Chromium.
 
+app.commandLine.appendSwitch('disable-client-side-phishing-detection');
 app.commandLine.appendSwitch('ignore-certificate-errors-spki-list');
-app.commandLine.appendSwitch('log-level', '3'); // Only show fatal errors
+app.commandLine.appendSwitch('log-level', '3');
 
 // Completely block stderr SSL errors
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
 process.stderr.write = (chunk, encoding, callback) => {
   const str = chunk.toString ? chunk.toString() : chunk;
-  
+
   // Block ALL SSL/certificate errors
-  if (str.includes('SSL routines') || 
-      str.includes('CERTIFICATE_VERIFY_FAILED') ||
-      str.includes('OPENSSL_internal') ||
-      str.includes('handshake.cc') ||
-      str.includes('CertVerifyProcBuiltin') ||
-      str.includes('pfSense') ||
-      str.includes('error:1000007d')) {
+  if (str.includes('SSL routines') ||
+    str.includes('CERTIFICATE_VERIFY_FAILED') ||
+    str.includes('OPENSSL_internal') ||
+    str.includes('handshake.cc') ||
+    str.includes('CertVerifyProcBuiltin') ||
+    str.includes('pfSense') ||
+    str.includes('error:1000007d')) {
     return true; // Completely suppress
   }
-  
+
   return originalStderrWrite(chunk, encoding, callback);
 };
 
@@ -51,7 +59,7 @@ const { ProfileStore } = require('./engine/profile-store');
 const fs = require('fs');
 
 // Hot reload in dev
-try { require('electron-reloader')(module, { watchRenderer: true }); } catch (_) {}
+try { require('electron-reloader')(module, { watchRenderer: true }); } catch (_) { }
 
 const store = new Store();
 const profileStore = new ProfileStore(store);
@@ -59,23 +67,29 @@ const profileStore = new ProfileStore(store);
 let mainWindow;
 
 function createWindow() {
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: width,
+    height: height,
     minWidth: 700,
     minHeight: 500,
     frame: false,
+    resizable: true,
     backgroundColor: '#0a0a0f',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
-      partition: 'persist:massapply' 
+      partition: 'persist:massapply'
     }
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  mainWindow.maximize();
   mainWindow.on('closed', () => { mainWindow = null; });
   // Handle certificate errors for webviews (for pfSense/corporate proxies)
   mainWindow.webContents.session.setCertificateVerifyProc((request, callback) => {
@@ -88,34 +102,28 @@ function createWindow() {
 // ─── Pending file upload state (for Google Forms file chooser interception) ───
 let pendingResumeUpload = null; // { filePath, resolve, reject, timeout }
 
+// ─── OAuth / Google Sign-In URL detection (module-level so all handlers share it) ───
+const OAUTH_HOSTS = [
+  'accounts.google.com',
+  'accounts.youtube.com',
+  'appleid.apple.com',
+  'login.microsoftonline.com',
+  'github.com/login',
+  'api.twitter.com/oauth'
+];
+const isOAuthUrl = (url) => url && OAUTH_HOSTS.some(h => url.includes(h));
+
 // Handle webview new-window events globally
 app.on('web-contents-created', (event, contents) => {
   contents.setWindowOpenHandler(({ url, disposition }) => {
-    console.log('🌐 Window open handler:', url, 'disposition:', disposition);
-    
-    // ── Google OAuth / Sign-In popups must stay as REAL windows ──
-    // OAuth works by posting messages back to window.opener.
-    // If we turn the popup into a tab, the opener reference is lost and
-    // the sign-in callback never fires on the parent page.
-    const isAuthPopup = 
-      url.includes('accounts.google.com') ||
-      url.includes('accounts.youtube.com') ||
-      url.includes('appleid.apple.com') ||
-      url.includes('login.microsoftonline.com') ||
-      url.includes('github.com/login/oauth') ||
-      url.includes('api.twitter.com/oauth') ||
-      url.includes('linkedin.com/oauth') ||
-      url.includes('/oauth') ||
-      url.includes('/signin') ||
-      url.includes('/auth/');
 
-    // Allow Google Forms/Drive upload popups when we have a pending file upload
-    const isUploadPopup = pendingResumeUpload && 
-        (url.includes('docs.google.com') || url.includes('drive.google.com') || 
-         url.includes('accounts.google.com') || url.includes('picker'));
+    // Only allow Google Forms/Drive upload popups when a file upload is pending
+    const isUploadPopup = pendingResumeUpload &&
+      (url.includes('docs.google.com') || url.includes('drive.google.com') ||
+        url.includes('accounts.google.com') || url.includes('picker'));
 
-    if (isAuthPopup || isUploadPopup) {
-      console.log('🔓 Allowing popup window for auth/upload:', url);
+    if (isUploadPopup) {
+      console.log('📎 Allowing upload popup:', url);
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -130,11 +138,8 @@ app.on('web-contents-created', (event, contents) => {
         }
       };
     }
-    
-    // For everything else, deny the popup and tell renderer to open a tab.
-    // NOTE: the renderer's own 'new-window' handler on the <webview> will
-    // ALSO fire in many cases, so we intentionally do NOT send 'tab:create'
-    // from here to avoid duplicates.  The renderer handler is sufficient.
+
+    // Deny all other popups — renderer opens them as in-app tabs
     return { action: 'deny' };
   });
 
@@ -143,16 +148,20 @@ app.on('web-contents-created', (event, contents) => {
   // if the popup navigates away from accounts.google.com, the auth is done.
   contents.on('did-create-window', (popup) => {
     console.log('🪟 Popup window created');
-    
-    // Spoof user-agent on the popup window too
-    popup.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36');
+
+    // Always use the clean UA — session is already set to CLEAN_UA,
+    // but explicitly set it on the popup webContents too just in case.
+    // Do NOT skip OAuth popups: Google needs to see a standard Chrome UA,
+    // NOT the Electron UA, otherwise it shows "Couldn't sign you in".
+    popup.webContents.setUserAgent(CLEAN_UA);
 
     popup.webContents.on('will-navigate', (navEvent, navUrl) => {
       console.log('🪟 Popup navigating to:', navUrl);
+      // Re-assert clean UA after any navigation in the popup
+      popup.webContents.setUserAgent(CLEAN_UA);
     });
 
     // When the popup finishes loading, check if the auth flow completed
-    // (i.e., Google redirected to a close/callback page or about:blank)
     popup.webContents.on('did-navigate', (navEvent, navUrl) => {
       console.log('🪟 Popup navigated to:', navUrl);
       // Google often navigates to about:blank or a gsi/transform URL when done
@@ -175,12 +184,12 @@ app.on('web-contents-created', (event, contents) => {
     const setupInterception = async () => {
       if (!alive()) return; // Frame already gone — bail out
       try {
-        try { contents.debugger.attach('1.3'); } catch(e) {}
+        try { contents.debugger.attach('1.3'); } catch (e) { }
         if (!alive()) return;
         await contents.debugger.sendCommand('Page.enable');
         if (!alive()) return;
         await contents.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true });
-        
+
         contents.debugger.on('message', async (evt, method, params) => {
           if (method === 'Page.fileChooserOpened' && pendingResumeUpload) {
             console.log('📎 File chooser opened, providing:', pending.filePath);
@@ -195,62 +204,90 @@ app.on('web-contents-created', (event, contents) => {
                 pendingResumeUpload.resolve({ success: true });
                 pendingResumeUpload = null;
               }
-            } catch(e) {
+            } catch (e) {
               console.error('File chooser handle error:', e.message);
             }
-            try { if (alive()) contents.debugger.detach(); } catch(e) {}
+            try { if (alive()) contents.debugger.detach(); } catch (e) { }
           }
         });
-      } catch(e) {
+      } catch (e) {
         // Silently ignore frame-disposed errors from rapid popup teardown
         if (!e.message?.includes('Render frame') && !e.message?.includes('destroyed')) {
           console.error('File chooser interception setup failed:', e.message);
         }
       }
     };
-    
+
     // Set up now and also after the content loads (for popups)
     setupInterception();
     contents.on('did-finish-load', setupInterception);
   }
 });
+
 app.whenReady().then(() => {
+  // ── STEP 1: Override UA at the SESSION level BEFORE the window is created ──
+  // This is the only way to strip 'Electron/x.x.x' from the very first request.
+  // webRequest.onBeforeSendHeaders fires too late for the initial TCP handshake.
+  session.defaultSession.setUserAgent(CLEAN_UA);
+  session.fromPartition('persist:massapply').setUserAgent(CLEAN_UA);
+
+  // ── STEP 2: Create window (sessions are patched before any requests go out) ──
   createWindow();
 
-  // Configure session to handle links
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (permission === 'notifications' || permission === 'media') {
-      callback(true);
-    } else {
-      callback(false);
-    }
+  // ── STEP 3: Patch navigator.userAgent in every renderer process ──
+  // Even with session.setUserAgent, the JS property navigator.userAgent can
+  // still report the Electron UA inside the renderer. We override it via script.
+  const uaScript = `
+    Object.defineProperty(navigator, 'userAgent', {
+      get: () => '${CLEAN_UA}',
+      configurable: true
+    });
+    Object.defineProperty(navigator, 'appVersion', {
+      get: () => '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+      configurable: true
+    });
+  `;
+
+  // Apply to every webContents when it finishes loading
+  app.on('web-contents-created', (_, wc) => {
+    wc.on('did-finish-load', () => {
+      try { wc.executeJavaScript(uaScript).catch(() => { }); } catch (_) { }
+    });
+    // Also set it immediately on the webContents level
+    try { wc.setUserAgent(CLEAN_UA); } catch (_) { }
   });
 
-  // Globally spoof User-Agent to bypass Google/LinkedIn blocking embedded browsers
+  // ── STEP 4: Per-domain header spoofing (skip OAuth domains) ──
   const filter = { urls: ['*://*/*'] };
-  session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
-    details.requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
-    callback({ requestHeaders: details.requestHeaders });
-  });
-  
-  // Also configure the specific partition used by the webviews
-  const persistSession = session.fromPartition('persist:massapply');
-  persistSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
-    details.requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
-    callback({ requestHeaders: details.requestHeaders });
+  const setupStealthHeaders = (sess) => {
+    sess.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+      // NEVER tamper with Google sign-in / OAuth requests
+      if (isOAuthUrl(details.url)) {
+        callback({ requestHeaders: details.requestHeaders });
+        return;
+      }
+      details.requestHeaders['User-Agent'] = CLEAN_UA;
+      details.requestHeaders['Accept-Language'] = 'en-US,en;q=0.9';
+      details.requestHeaders['Sec-CH-UA'] = CLEAN_SEC_CH_UA;
+      details.requestHeaders['Sec-CH-UA-Mobile'] = '?0';
+      details.requestHeaders['Sec-CH-UA-Platform'] = '"Windows"';
+      callback({ requestHeaders: details.requestHeaders });
+    });
+  };
+  setupStealthHeaders(session.defaultSession);
+  setupStealthHeaders(session.fromPartition('persist:massapply'));
+
+  // ── STEP 5: Permissions ──
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(permission === 'notifications' || permission === 'media');
   });
 
-  // Completely suppress certificate error logging
+  // ── STEP 6: Suppress noisy certificate error logs ──
   const originalConsoleError = console.error;
   console.error = (...args) => {
     const msg = args.join(' ');
-    // Filter out certificate errors
-    if (msg.includes('CertVerifyProcBuiltin') || 
-        msg.includes('pfSense') ||
-        msg.includes('pfBNG-DNSBL') ||
-        msg.includes('ERROR: No matching issuer')) {
-      return; // Don't log these
-    }
+    if (msg.includes('CertVerifyProcBuiltin') || msg.includes('pfSense') ||
+      msg.includes('pfBNG-DNSBL') || msg.includes('ERROR: No matching issuer')) return;
     originalConsoleError.apply(console, args);
   };
 });
@@ -282,21 +319,21 @@ ipcMain.handle('window:screenshot', async () => {
 
 // ─── Tabs Persistence ───
 ipcMain.handle('tabs:getAll', () => store.get('tabs', []));
-ipcMain.handle('tabs:save', (_, tabs) => { 
-  store.set('tabs', tabs); 
-  return true; 
+ipcMain.handle('tabs:save', (_, tabs) => {
+  store.set('tabs', tabs);
+  return true;
 });
 
 // ─── Open URL in New Tab (NEW!) ───
 ipcMain.handle('tabs:openInNewTab', (_, url) => {
   console.log('📂 Opening in new tab:', url);
-  
+
   // Validate and format URL
   let formattedUrl = url;
   if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
     formattedUrl = 'https://' + formattedUrl;
   }
-  
+
   // Get current tabs and add new one
   const tabs = store.get('tabs', []);
   const newTab = {
@@ -305,16 +342,16 @@ ipcMain.handle('tabs:openInNewTab', (_, url) => {
     title: 'Loading...',
     active: true
   };
-  
+
   // Deactivate all other tabs
   tabs.forEach(tab => tab.active = false);
   tabs.push(newTab);
-  
+
   store.set('tabs', tabs);
-  
+
   // Notify renderer to create the tab
   mainWindow?.webContents.send('tab:create', newTab);
-  
+
   return newTab;
 });
 // ─── Profile ───
@@ -374,12 +411,12 @@ ipcMain.handle('ai:answerQuestions', async (_, { questions, jobContext, jobDescr
   }
   const settings = store.get('settings', {});
   const apiKeys = settings.geminiApiKey || '';
-  
+
   if (!apiKeys.trim()) {
-    return questions.map(q => ({ 
-      label: q.label, 
-      answer: '', 
-      error: 'No API key configured. Add one in Settings.' 
+    return questions.map(q => ({
+      label: q.label,
+      answer: '',
+      error: 'No API key configured. Add one in Settings.'
     }));
   }
 
@@ -393,10 +430,10 @@ ipcMain.handle('ai:answerQuestions', async (_, { questions, jobContext, jobDescr
     if (!response.ok) {
       const errData = await response.json().catch(() => ({ error: 'Server error' }));
       console.error('❌ AI server error:', errData.error);
-      return errData.answers || questions.map(q => ({ 
-        label: q.label, 
-        answer: '', 
-        error: errData.error 
+      return errData.answers || questions.map(q => ({
+        label: q.label,
+        answer: '',
+        error: errData.error
       }));
     }
 
@@ -404,19 +441,19 @@ ipcMain.handle('ai:answerQuestions', async (_, { questions, jobContext, jobDescr
     return data.answers || [];
   } catch (err) {
     console.error('❌ AI handler error:', err.message);
-    
+
     if (err.message.includes('ECONNREFUSED') || err.message.includes('fetch failed')) {
       return questions.map(q => ({
-        label: q.label, 
+        label: q.label,
         answer: '',
         error: '⚠️ AI Server not running! Start it with: npx nodemon server.js'
       }));
     }
-    
-    return questions.map(q => ({ 
-      label: q.label, 
-      answer: '', 
-      error: err.message 
+
+    return questions.map(q => ({
+      label: q.label,
+      answer: '',
+      error: err.message
     }));
   }
 });
@@ -428,7 +465,7 @@ ipcMain.handle('engine:nativeClick', async (_, { webContentsId, selector }) => {
     const wc = webContents.fromId(webContentsId);
     if (!wc) return { success: false, error: 'WebContents not found' };
 
-    try { wc.debugger.attach('1.3'); } catch(e) {}
+    try { wc.debugger.attach('1.3'); } catch (e) { }
     await wc.debugger.sendCommand('Runtime.enable');
 
     // Find element and get its center coordinates
@@ -447,7 +484,7 @@ ipcMain.handle('engine:nativeClick', async (_, { webContentsId, selector }) => {
 
     const coords = evalResult.result.value;
     if (!coords) {
-      try { wc.debugger.detach(); } catch(e) {}
+      try { wc.debugger.detach(); } catch (e) { }
       return { success: false, error: 'Element not found: ' + selector };
     }
 
@@ -467,7 +504,7 @@ ipcMain.handle('engine:nativeClick', async (_, { webContentsId, selector }) => {
       type: 'mouseReleased', x, y, button: 'left', clickCount: 1
     });
 
-    try { wc.debugger.detach(); } catch(e) {}
+    try { wc.debugger.detach(); } catch (e) { }
     return { success: true };
   } catch (err) {
     console.error('❌ Native click error:', err.message);
@@ -507,7 +544,7 @@ ipcMain.handle('engine:smartUploadFile', async (_, { webContentsId, selector, fi
     };
     const mimeType = mimeTypes[ext] || 'application/octet-stream';
 
-    try { wc.debugger.attach('1.3'); } catch(e) {}
+    try { wc.debugger.attach('1.3'); } catch (e) { }
     await wc.debugger.sendCommand('Runtime.enable');
 
     // Inject the file via DataTransfer API
@@ -605,7 +642,7 @@ ipcMain.handle('engine:smartUploadFile', async (_, { webContentsId, selector, fi
       returnByValue: true
     });
 
-    try { wc.debugger.detach(); } catch(e) {}
+    try { wc.debugger.detach(); } catch (e) { }
 
     const resultVal = injectResult.result.value;
     if (typeof resultVal === 'string') {
@@ -629,7 +666,7 @@ ipcMain.handle('engine:uploadFile', async (_, { webContentsId, selector, filePat
     const wc = webContents.fromId(webContentsId);
     if (!wc) return { success: false, error: 'WebContents not found' };
 
-    try { wc.debugger.attach('1.3'); } catch(e) {}
+    try { wc.debugger.attach('1.3'); } catch (e) { }
 
     const { root } = await wc.debugger.sendCommand('DOM.getDocument');
 
@@ -644,7 +681,7 @@ ipcMain.handle('engine:uploadFile', async (_, { webContentsId, selector, filePat
           selector: sel
         });
         if (result.nodeId) { nodeId = result.nodeId; break; }
-      } catch(e) {}
+      } catch (e) { }
     }
 
     // Fallback: search all inputs for type=file
@@ -662,11 +699,11 @@ ipcMain.handle('engine:uploadFile', async (_, { webContentsId, selector, filePat
           }
           if (attrMap.type === 'file') { nodeId = nId; break; }
         }
-      } catch(e) {}
+      } catch (e) { }
     }
 
     if (!nodeId) {
-      try { wc.debugger.detach(); } catch(e) {}
+      try { wc.debugger.detach(); } catch (e) { }
       return { success: false, error: 'File input not found with any selector' };
     }
 
@@ -675,7 +712,7 @@ ipcMain.handle('engine:uploadFile', async (_, { webContentsId, selector, filePat
       files: [filePath]
     });
 
-    try { wc.debugger.detach(); } catch(e) {}
+    try { wc.debugger.detach(); } catch (e) { }
     return { success: true, method: 'CDP-setFileInputFiles' };
   } catch (err) {
     console.error('❌ File upload error:', err.message);
@@ -695,21 +732,23 @@ ipcMain.handle('engine:googleFormsUpload', async (_, { webContentsId, filePath }
     if (!wc) return { success: false, error: 'WebContents not found' };
 
     // Set up file chooser interception BEFORE clicking anything
-    try { wc.debugger.attach('1.3'); } catch(e) {}
+    try { wc.debugger.attach('1.3'); } catch (e) { }
     await wc.debugger.sendCommand('Page.enable');
     await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true });
 
     const uploadPromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         pendingResumeUpload = null;
-        try { wc.debugger.detach(); } catch(e) {}
+        try { wc.debugger.detach(); } catch (e) { }
         reject(new Error('File upload timeout (20s) — try setting resume in standard form'));
       }, 20000);
 
-      pendingResumeUpload = { filePath, resolve: (result) => {
-        clearTimeout(timeout);
-        resolve(result);
-      }, reject, timeout };
+      pendingResumeUpload = {
+        filePath, resolve: (result) => {
+          clearTimeout(timeout);
+          resolve(result);
+        }, reject, timeout
+      };
 
       wc.debugger.on('message', async (evt, method, params) => {
         if (method === 'Page.fileChooserOpened') {
@@ -722,10 +761,10 @@ ipcMain.handle('engine:googleFormsUpload', async (_, { webContentsId, filePath }
               files: [filePath]
             });
             resolve({ success: true });
-          } catch(e) {
+          } catch (e) {
             resolve({ success: false, error: e.message });
           }
-          try { wc.debugger.detach(); } catch(e) {}
+          try { wc.debugger.detach(); } catch (e) { }
         }
       });
     });
@@ -797,4 +836,51 @@ ipcMain.handle('history:add', (_, entry) => {
   if (history.length > 100) history.splice(0, history.length - 100);
   store.set('applicationHistory', history);
   return true;
+});
+
+// ─── Cache & Site Data ───
+ipcMain.handle('app:getSiteData', async () => {
+  try {
+    const sess = session.fromPartition('persist:massapply');
+    const cookies = await sess.cookies.get({});
+    const domains = new Set();
+    cookies.forEach(c => {
+      let d = c.domain;
+      if (d.startsWith('.')) d = d.substring(1);
+      domains.add(d);
+    });
+    return Array.from(domains).sort();
+  } catch (e) { console.error('Error getting site data:', e); return []; }
+});
+
+ipcMain.handle('app:clearAllSiteData', async () => {
+  try {
+    const sess = session.fromPartition('persist:massapply');
+    await sess.clearStorageData();
+    await sess.clearCache();
+    // Also clear default session
+    await session.defaultSession.clearStorageData();
+    await session.defaultSession.clearCache();
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('app:clearSiteData', async (_, domain) => {
+  try {
+    const sess = session.fromPartition('persist:massapply');
+    const cookies = await sess.cookies.get({});
+    for (const c of cookies) {
+      let d = c.domain;
+      if (d.startsWith('.')) d = d.substring(1);
+      if (d === domain) {
+        let url = (c.secure ? 'https://' : 'http://') + c.domain + c.path;
+        await sess.cookies.remove(url, c.name);
+      }
+    }
+    await sess.clearStorageData({ origin: `https://${domain}` });
+    await sess.clearStorageData({ origin: `http://${domain}` });
+    await session.defaultSession.clearStorageData({ origin: `https://${domain}` });
+    await session.defaultSession.clearStorageData({ origin: `http://${domain}` });
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
 });

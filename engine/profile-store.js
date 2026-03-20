@@ -84,6 +84,7 @@ class ProfileStore {
 
       // Files
       resumePath: '',
+      coverLetterText: '',
       coverLetterPath: '',
       photoPath: '',
 
@@ -303,7 +304,8 @@ class ProfileStore {
       'tell us about yourself': p.aboutMe,
       'summary': p.aboutMe,
       'objective': p.aboutMe,
-      'cover letter': p.aboutMe,
+      'cover letter': p.coverLetterText || p.aboutMe,
+      'cover letter text': p.coverLetterText,
       'why should we hire you': p.whyHire,
       'why hire': p.whyHire
     };

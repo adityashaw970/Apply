@@ -50,5 +50,10 @@ contextBridge.exposeInMainWorld('api', {
     get: () => ipcRenderer.invoke('history:get'),
     clear: () => ipcRenderer.invoke('history:clear'),
     add: (entry) => ipcRenderer.invoke('history:add', entry)
+  },
+  appData: {
+    getSiteData: () => ipcRenderer.invoke('app:getSiteData'),
+    clearAllSiteData: () => ipcRenderer.invoke('app:clearAllSiteData'),
+    clearSiteData: (domain) => ipcRenderer.invoke('app:clearSiteData', domain)
   }
 });

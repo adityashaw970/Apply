@@ -294,6 +294,7 @@
               <label class="full">GitHub<input type="url" data-field="githubUrl" placeholder="https://github.com/..."></label>
               <label class="full">Portfolio<input type="url" data-field="portfolioUrl" placeholder="https://yoursite.com"></label>
               <label class="full">Resume URL<input type="url" data-field="resumeUrl" placeholder="https://drive.google.com/..."></label>
+              <label class="full">Resume PDF Path<input type="text" data-field="resumePath" placeholder="C:\path\to\resume.pdf"></label>
             </div>
           </div>
           <div class="pf-section">
@@ -303,6 +304,12 @@
               <label class="full">Certifications<input type="text" data-field="certifications" placeholder="AWS, GCP..."></label>
               <label class="full">About Me<textarea data-field="aboutMe" rows="3" placeholder="Brief summary..."></textarea></label>
               <label class="full">Why Hire You?<textarea data-field="whyHire" rows="3" placeholder="Your answer..."></textarea></label>
+              <label class="full">Cover Letter (Text)
+                <textarea data-field="coverLetterText" rows="4" placeholder="Write your cover letter here..."></textarea>
+              </label>
+              <label class="full">Cover Letter PDF Path
+                <input type="text" data-field="coverLetterPath" placeholder="C:\path\to\coverletter.pdf">
+              </label>
             </div>
           </div>
           <div class="pf-section">
@@ -342,6 +349,20 @@
               </label>
               <label class="full">Resume Path<input type="text" id="set-resumePath" placeholder="C:\path\to\resume.pdf"></label>
               <small class="hint">Used for auto-uploading resume to file upload fields</small>
+            </div>
+          </div>
+          <div class="pf-section">
+            <h3 class="pf-title">Site Data & Cache</h3>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+              <button class="btn-save-profile" id="btn-show-cache" style="background:#444;flex:1;">
+                <span class="material-icons-round">storage</span> Show Site Data
+              </button>
+              <button class="btn-save-profile" id="btn-clear-cache" style="background:#c62828;flex:1;">
+                <span class="material-icons-round">restart_alt</span> Reset & Clear Cache
+              </button>
+            </div>
+            <div id="site-data-list" style="display:none;background:#1e1e2d;border-radius:6px;padding:8px;max-height:200px;overflow-y:auto;">
+              <!-- Site data domains will be listed here -->
             </div>
           </div>
           <button class="btn-save-profile" id="btn-save-settings">

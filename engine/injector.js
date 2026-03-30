@@ -32,9 +32,15 @@
                        document.querySelector('.job-interest-form') !== null;
 
   // Detect Wellfound (AngelList Talent) job application modal
+  // The modal may or may not carry data-test="JobApplication-Modal" — check multiple indicators.
   const isWellfound = (window.location.hostname.includes('wellfound.com') ||
                        window.location.hostname.includes('angel.co')) &&
-                      document.querySelector('[data-test="JobApplication-Modal"]') !== null;
+                      !!(
+                        document.querySelector('[data-test="JobApplication-Modal"]') ||
+                        document.querySelector('[data-test="JobApplicationModal--SubmitButton"]') ||
+                        document.querySelector('[class*="styles_modal"][class*="MFCOh"]') ||
+                        document.querySelector('[class*="styles_modal__"]')
+                      );
 
   // ═══ HELPER: safely set value on any input ═══
   function safeSetValue(el, value) {
@@ -910,8 +916,14 @@
 
   // ═══ WELLFOUND MODAL HANDLER ═══
   function handleWellfoundModal() {
-    // Find the application modal
-    const modal = document.querySelector('[data-test="JobApplication-Modal"]');
+    // Find the application modal — try multiple selectors since the data-test attribute
+    // is not always present (the modal wrapper class is styles_modal__XXXXX)
+    const modal =
+      document.querySelector('[data-test="JobApplication-Modal"]') ||
+      document.querySelector('[class*="styles_modal__"]') ||
+      document.querySelector('[data-test="JobApplicationModal--SubmitButton"]')?.closest('div.styles_modal__MFCOh, [class*="styles_modal__"]') ||
+      document.querySelector('[data-test="JobApplicationModal--SubmitButton"]')?.closest('div[class*="styles_"]');
+
     if (!modal) {
       result.errors.push('Wellfound: Application modal not found.');
       return;

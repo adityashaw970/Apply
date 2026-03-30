@@ -5,7 +5,7 @@
 //        review loop protection, improved AI integration
 // ══════════════════════════════════════════════════════════
 
-(function(FIELD_MAP, USER_PROFILE, OPTIONS) {
+(function (FIELD_MAP, USER_PROFILE, OPTIONS) {
   'use strict';
 
   const ACTION = OPTIONS.action || 'scanJobs';
@@ -19,18 +19,138 @@
     error: null
   };
 
-  // ═══ HELPER: Safely set value with React-compatible events ═══
+  // ═══ HELPER: Safely set value with React/Ember-compatible events ═══
   function safeSetValue(el, value) {
+    console.log(`[safeSetValue] Setting input to: "${value}"`, el.id || el.className);
+
+    // Strategy 1: focus + React setter
     el.focus();
     try {
       const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
       if (setter) setter.call(el, value);
       else el.value = value;
-    } catch(e) { el.value = value; }
+    } catch (e) { el.value = value; }
+
+    // Strategy 2: User interaction events (Mouse + Keyboard)
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const mouseOpts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
+    el.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+    el.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
+    el.dispatchEvent(new MouseEvent('click', mouseOpts));
+
+    el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+    el.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: 'Enter' }));
+    el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
+
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
     el.dispatchEvent(new Event('blur', { bubbles: true }));
+
+    // Strategy 3: React fiber internal onChange
+    try {
+      const fiberKey = Object.keys(el).find(k =>
+        k.startsWith('__reactFiber') ||
+        k.startsWith('__reactInternalInstance') ||
+        k.startsWith('__reactEventHandlers') ||
+        k.startsWith('_reactFiber')
+      );
+      if (fiberKey) {
+        const fiber = el[fiberKey];
+        const props = fiber?.memoizedProps || fiber?.pendingProps;
+        if (props?.onChange) {
+          props.onChange({ target: el, currentTarget: el, bubbles: true });
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // Strategy 4: Ember-specific change event
+    try {
+      const changeEvent = new Event('change', { bubbles: true, cancelable: false });
+      Object.defineProperty(changeEvent, 'target', { value: el, writable: false });
+      el.dispatchEvent(changeEvent);
+    } catch (e) { /* ignore */ }
+  }
+
+  // ═══ HELPER: Set select value — multi-strategy for React/Ember/LinkedIn ═══
+  // LinkedIn uses Ember.js. Direct .value assignment is ignored by Ember's bindings.
+  // We try multiple strategies in order:
+  //   1. selectedIndex assignment (more direct than .value for Ember)
+  //   2. Native HTMLSelectElement prototype setter (for React if present)
+  //   3. Simulate user interaction: focus + keyboard events
+  //   4. React fiber internal onChange hook
+  function safeSetSelectValue(selectEl, value) {
+    console.log(`[safeSetSelectValue] Setting select to: "${value}"`, selectEl.id || selectEl.className);
+
+    // Find the target option index
+    const opts = Array.from(selectEl.options);
+    const targetIdx = opts.findIndex(o =>
+      o.value === value ||
+      o.text.trim() === value ||
+      o.value.toLowerCase() === value.toLowerCase() ||
+      o.text.trim().toLowerCase() === value.toLowerCase()
+    );
+
+    if (targetIdx === -1) {
+      console.warn(`[safeSetSelectValue] Option not found: "${value}"`);
+      return;
+    }
+
+    // Strategy 1: Set selectedIndex (Ember watches index changes)
+    selectEl.selectedIndex = targetIdx;
+    selectEl.options[targetIdx].selected = true;
+
+    // Strategy 2: Native setter (for React)
+    try {
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+      if (nativeSetter) nativeSetter.call(selectEl, value);
+      else selectEl.value = value;
+    } catch (e) { selectEl.value = value; }
+
+    // Strategy 3: Focus + simulated user interaction events
+    selectEl.focus();
+    selectEl.dispatchEvent(new Event('focus', { bubbles: true }));
+    selectEl.dispatchEvent(new Event('input', { bubbles: true }));
+    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    selectEl.dispatchEvent(new Event('blur', { bubbles: true }));
+
+    // Also simulate mouse interaction on the select
+    const rect = selectEl.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const mouseOpts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
+    selectEl.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+    selectEl.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
+    selectEl.dispatchEvent(new MouseEvent('click', mouseOpts));
+
+    // Strategy 4: React fiber internal onChange
+    try {
+      const fiberKey = Object.keys(selectEl).find(k =>
+        k.startsWith('__reactFiber') ||
+        k.startsWith('__reactInternalInstance') ||
+        k.startsWith('__reactEventHandlers') ||
+        k.startsWith('_reactFiber')
+      );
+      if (fiberKey) {
+        const fiber = selectEl[fiberKey];
+        const props = fiber?.memoizedProps || fiber?.pendingProps;
+        if (props?.onChange) {
+          props.onChange({ target: selectEl, currentTarget: selectEl, bubbles: true });
+        }
+      }
+    } catch (e) { /* ignore React fiber errors */ }
+
+    // Strategy 5: Ember-specific — trigger Ember's run loop via a bubbling change event  
+    // by firing it on the document as well
+    try {
+      const changeEvent = new Event('change', { bubbles: true, cancelable: false });
+      Object.defineProperty(changeEvent, 'target', { value: selectEl, writable: false });
+      selectEl.dispatchEvent(changeEvent);
+    } catch (e) { /* ignore */ }
+
+    console.log(`[safeSetSelectValue] Done. Final value: "${selectEl.value}" (index: ${selectEl.selectedIndex})`);
   }
 
   // ═══ HELPER: Click with full event sequence ═══
@@ -65,8 +185,20 @@
     return txt.value.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   }
 
-  // ═══ HELPER: Get text label from LinkedIn form group ═══
   function getGroupLabel(group) {
+    // Check legend first (checkbox/radio fieldsets use <legend> not <label>)
+    const legendEl = group.querySelector('legend');
+    if (legendEl) {
+      const ariaHidden = legendEl.querySelector('span[aria-hidden="true"]');
+      if (ariaHidden && ariaHidden.textContent.trim()) {
+        return ariaHidden.textContent.trim().replace(/\s+/g, ' ');
+      }
+      const clone = legendEl.cloneNode(true);
+      clone.querySelectorAll('.visually-hidden').forEach(n => n.remove());
+      const text = clone.textContent.trim().replace(/\s+/g, ' ');
+      if (text) return text;
+    }
+
     const labelSelectors = [
       'label',
       '.fb-dash-form-element__label',
@@ -81,10 +213,29 @@
     for (const sel of labelSelectors) {
       const lbl = group.querySelector(sel);
       if (lbl && lbl.textContent.trim()) {
+        const ariaHiddenSpan = lbl.querySelector('span[aria-hidden="true"]');
+        if (ariaHiddenSpan && ariaHiddenSpan.textContent.trim()) {
+          return ariaHiddenSpan.textContent.trim().replace(/\s+/g, ' ');
+        }
+        const clone = lbl.cloneNode(true);
+        clone.querySelectorAll('.visually-hidden, [aria-hidden="false"]').forEach(n => n.remove());
+        const text = clone.textContent.trim().replace(/\s+/g, ' ');
+        if (text) return text;
         return lbl.textContent.trim().replace(/\s+/g, ' ');
       }
     }
-    
+
+    // Fallback: find label via for→id association (fixes LinkedIn field)
+    const inputEl = group.querySelector('input[id], select[id], textarea[id]');
+    if (inputEl && inputEl.id) {
+      const associated = document.querySelector(`label[for="${CSS.escape(inputEl.id)}"]`);
+      if (associated) {
+        const ariaHidden = associated.querySelector('span[aria-hidden="true"]');
+        if (ariaHidden && ariaHidden.textContent.trim()) return ariaHidden.textContent.trim();
+        return associated.textContent.trim().replace(/\s+/g, ' ');
+      }
+    }
+
     const input = group.querySelector('input, select, textarea');
     if (input) {
       return input.getAttribute('aria-label') || input.getAttribute('placeholder') || input.name || '';
@@ -208,11 +359,11 @@
   if (ACTION === 'scanJobs') {
     const jobs = [];
 
-    // Primary: use data-job-id wrapper for stable identification
+    // Primary: LinkedIn now uses <li data-occludable-job-id> as the card container
     const cardSelectors = [
+      '[data-occludable-job-id]',
       'div.job-card-job-posting-card-wrapper[data-job-id]',
       '.job-card-container[data-job-id]',
-      '[data-occludable-job-id]',
       'li.ember-view.occludable-update'
     ];
 
@@ -225,7 +376,7 @@
 
     cards.forEach((card, idx) => {
       // Get the stable job ID from data attribute
-      const jobId = card.getAttribute('data-job-id') || card.getAttribute('data-occludable-job-id') || '';
+      const jobId = card.getAttribute('data-occludable-job-id') || card.getAttribute('data-job-id') || '';
 
       // Title: inside artdeco-entity-lockup__title
       const titleEl = card.querySelector(
@@ -237,43 +388,59 @@
         'a.job-card-container__link'
       );
 
-      // Company: inside artdeco-entity-lockup__subtitle
+      // Company: inside artdeco-entity-lockup__subtitle (new DOM uses <span>)
       const companyEl = card.querySelector(
+        '.artdeco-entity-lockup__subtitle span, ' +
         '.artdeco-entity-lockup__subtitle div, ' +
         '.artdeco-entity-lockup__subtitle, ' +
         '.job-card-container__primary-description, ' +
         '.job-card-container__company-name'
       );
 
-      // Location: inside artdeco-entity-lockup__caption
+      // Location: inside artdeco-entity-lockup__caption li span (new DOM structure)
       const locationEl = card.querySelector(
+        '.artdeco-entity-lockup__caption li span, ' +
         '.artdeco-entity-lockup__caption div, ' +
         '.artdeco-entity-lockup__caption, ' +
         '.job-card-container__metadata-item'
       );
 
-      const title = titleEl?.textContent?.trim() || `Job ${idx + 1}`;
-      const company = companyEl?.textContent?.trim() || '';
-      const location = locationEl?.textContent?.trim() || '';
+      let title = `Job ${idx + 1}`;
+      if (titleEl) {
+        const ariaHiddenSpan = titleEl.querySelector('span[aria-hidden="true"]');
+        title = (ariaHiddenSpan || titleEl).textContent.trim().replace(/\s+/g, ' ');
+      }
+      
+      let company = ``;
+      if (companyEl) {
+        const ariaHiddenSpan = companyEl.querySelector('span[aria-hidden="true"]');
+        company = (ariaHiddenSpan || companyEl).textContent.trim().replace(/\s+/g, ' ');
+      }
+      
+      const location = locationEl?.textContent?.replace(/\s+/g, ' ').trim() || '';
 
-      // Check footer for "Applied" text
-      const footerItems = card.querySelectorAll('.job-card-job-posting-card-wrapper__footer-item');
+      // Check footer for "Applied" / "Easy Apply" — new DOM uses job-card-container__footer-item
+      const footerItems = card.querySelectorAll(
+        '.job-card-container__footer-item, ' +
+        '.job-card-list__footer-wrapper li'
+      );
       let isApplied = false;
+      let isEasyApply = false;
       footerItems.forEach(fi => {
         const txt = fi.textContent.trim().toLowerCase();
         if (txt === 'applied') isApplied = true;
+        if (txt.includes('easy apply')) isEasyApply = true;
       });
       // Also check other applied indicators
       if (!isApplied) {
         const appliedBadge = card.querySelector('.job-card-container__footer-item--applied, .artdeco-inline-feedback--success');
         isApplied = !!appliedBadge;
       }
-
-      // Check if Easy Apply
-      let isEasyApply = false;
-      footerItems.forEach(fi => {
-        if (fi.textContent.trim().toLowerCase().includes('easy apply')) isEasyApply = true;
-      });
+      // Check t-bold footer item for "applied" state
+      const boldFooterItem = card.querySelector('.job-card-container__footer-item.t-bold');
+      if (boldFooterItem && boldFooterItem.textContent.trim().toLowerCase() === 'applied') {
+        isApplied = true;
+      }
 
       jobs.push({ index: idx, jobId, title, company, location, isApplied, isEasyApply });
     });
@@ -284,23 +451,26 @@
 
   // ═══════════════════════════════════════════════════
   // ACTION: clickJob — Click a specific job card
+  // LinkedIn updated DOM: <a> tags are marked "disabled"
+  // Must click the card div or strong title text, NOT the <a> link
   // ═══════════════════════════════════════════════════
   else if (ACTION === 'clickJob') {
     const JOB_ID = OPTIONS.jobId || '';
 
-    // Primary: find the card by data-job-id for reliable targeting
+    // Primary: find the <li> container by stable data-occludable-job-id
     let card = null;
     if (JOB_ID) {
-      card = document.querySelector(`div.job-card-job-posting-card-wrapper[data-job-id="${JOB_ID}"]`);
-      if (!card) card = document.querySelector(`[data-occludable-job-id="${JOB_ID}"]`);
+      card = document.querySelector(`[data-occludable-job-id="${JOB_ID}"]`);
+      if (!card) card = document.querySelector(`div.job-card-job-posting-card-wrapper[data-job-id="${JOB_ID}"]`);
+      if (!card) card = document.querySelector(`[data-job-id="${JOB_ID}"]`);
     }
 
     // Fallback: find by index
     if (!card) {
       const fallbackSelectors = [
+        '[data-occludable-job-id]',
         'div.job-card-job-posting-card-wrapper[data-job-id]',
         '.job-card-container[data-job-id]',
-        '[data-occludable-job-id]',
         'li.ember-view.occludable-update'
       ];
       let cards = [];
@@ -312,16 +482,46 @@
     }
 
     if (card) {
-      // Click the <a> card link directly — the actual clickable element
-      const clickTarget = card.querySelector(
-        'a.job-card-job-posting-card-wrapper__card-link, ' +
-        'a[data-test-app-aware-link], ' +
-        '.job-card-job-posting-card-wrapper__title span[aria-hidden="true"], ' +
-        '.artdeco-entity-lockup__title a, ' +
-        'a.job-card-container__link'
-      ) || card;
+      // LinkedIn's new DOM: <a> tags have class "disabled" and navigating them
+      // causes page navigation. Instead, we must click the job-card-container div
+      // or the title <strong> element — these trigger the right-pane detail view.
 
-      realClick(clickTarget);
+      // First priority: the inner job-card-container div (the real interactive element)
+      let clickTarget = card.querySelector('div.job-card-container');
+
+      // Second priority: the <strong> title text inside the card (also works)
+      if (!clickTarget) {
+        clickTarget = card.querySelector(
+          '.artdeco-entity-lockup__title span[aria-hidden="true"] strong, ' +
+          '.job-card-job-posting-card-wrapper__title span[aria-hidden="true"] strong'
+        );
+      }
+
+      // Third priority: the title span itself (not the <a>)
+      if (!clickTarget) {
+        clickTarget = card.querySelector(
+          '.artdeco-entity-lockup__title span[aria-hidden="true"], ' +
+          '.job-card-job-posting-card-wrapper__title span[aria-hidden="true"]'
+        );
+      }
+
+      // Last resort: click the card container itself, but prevent link navigation
+      if (!clickTarget) {
+        clickTarget = card;
+      }
+
+      // Scroll into view and click
+      clickTarget.scrollIntoView({ behavior: 'instant', block: 'center' });
+      const rect = clickTarget.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy, button: 0 };
+      clickTarget.dispatchEvent(new MouseEvent('pointerdown', opts));
+      clickTarget.dispatchEvent(new MouseEvent('mousedown', opts));
+      clickTarget.dispatchEvent(new MouseEvent('pointerup', opts));
+      clickTarget.dispatchEvent(new MouseEvent('mouseup', opts));
+      clickTarget.dispatchEvent(new MouseEvent('click', opts));
+
       result.success = true;
       result.data = { clicked: JOB_INDEX, jobId: JOB_ID };
     } else {
@@ -400,7 +600,7 @@
   // ═══════════════════════════════════════════════════
   else if (ACTION === 'fillStep') {
     const modal = document.querySelector('.jobs-easy-apply-modal, .artdeco-modal--layer-default, [role="dialog"][aria-labelledby*="easy-apply"]');
-    
+
     if (!modal) {
       result.success = false;
       result.error = 'NO_MODAL_FOUND';
@@ -410,7 +610,7 @@
     // Determine current step info
     const progressBar = modal.querySelector('.artdeco-completeness-meter-linear__progress-element, progress');
     const progressValue = progressBar?.getAttribute('value') || progressBar?.style?.width || '0';
-    
+
     const stepIndicator = modal.querySelector('.artdeco-completeness-meter-linear, .jobs-easy-apply-content header');
     const stepText = stepIndicator?.textContent?.trim() || '';
 
@@ -468,7 +668,7 @@
       if (textInput && textInput.type !== 'hidden' && textInput.type !== 'file') {
         const currentVal = textInput.value.trim();
         const profileVal = matchToProfile(label);
-        
+
         if (profileVal && (!currentVal || OPTIONS.overwrite)) {
           safeSetValue(textInput, String(profileVal));
           filledFields.push({ label, value: String(profileVal), source: 'profile' });
@@ -491,7 +691,7 @@
       if (textarea) {
         const currentVal = textarea.value.trim();
         const profileVal = matchToProfile(label);
-        
+
         if (profileVal && (!currentVal || OPTIONS.overwrite)) {
           safeSetValue(textarea, String(profileVal));
           filledFields.push({ label, value: String(profileVal), source: 'profile' });
@@ -513,38 +713,77 @@
       const selectEl = group.querySelector('select');
       if (selectEl) {
         const currentVal = selectEl.value;
-        const profileVal = matchToProfile(label);
         const options = Array.from(selectEl.options).map(o => ({ text: o.text.trim(), value: o.value })).filter(o => o.value);
-        const cappedOptions = options.length > 20 
-          ? [...options.map(o => o.text).slice(0, 5), '...(' + options.length + ' total options)'] 
+        const cappedOptions = options.length > 20
+          ? [...options.map(o => o.text).slice(0, 5), '...(' + options.length + ' total options)']
           : options.map(o => o.text);
 
-        if (profileVal && (!currentVal || OPTIONS.overwrite)) {
-          const target = String(profileVal).toLowerCase();
-          const match = options.find(o => o.text.toLowerCase().includes(target) || target.includes(o.text.toLowerCase()))
-                     || options.find(o => o.value.toLowerCase().includes(target));
-          if (match) {
-            selectEl.value = match.value;
-            selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-            filledFields.push({ label, value: match.text, source: 'profile' });
-          } else {
-            unknownFields.push({ label, type: 'select', required, options: cappedOptions, selector: selectEl.id ? `#${selectEl.id}` : '' });
-          }
-        } else if (!currentVal || currentVal === '' || currentVal === 'Select an option' || currentVal === 'Select') {
-          const aiAnswer = AI_ANSWERS.find(a => a.label === label || label.toLowerCase().includes(a.label.toLowerCase()));
+        // Detect boolean/yes-no selects — ALWAYS use AI for these (profile text like "3 years" can't fill Yes/No)
+        const optTexts = options.map(o => o.text.toLowerCase().replace(/[^a-z]/g, ''));
+        const isBooleanSelect = options.length <= 4 &&
+          optTexts.some(t => t === 'yes' || t === 'no' || t === 'yesno' || t === 'true' || t === 'false');
+
+        // Normalize helper for label matching
+        const normalizeLabel = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+        // Helper: try filling from AI_ANSWERS
+        function tryAiFill() {
+          const normalLabel = normalizeLabel(label);
+          const aiAnswer = AI_ANSWERS.find(a => {
+            const normalAI = normalizeLabel(a.label);
+            return normalLabel === normalAI ||
+              normalLabel.includes(normalAI) ||
+              normalAI.includes(normalLabel) ||
+              normalLabel.replace(normalAI, '').trim() === '' ||
+              (normalLabel.length > 0 && normalAI.startsWith(normalLabel.substring(0, Math.min(30, normalLabel.length))));
+          });
+          console.log(`[AI Fill] Label: "${label}" | isBooleanSelect: ${isBooleanSelect} | AI_ANSWERS count: ${AI_ANSWERS.length}`);
           if (aiAnswer && aiAnswer.answer) {
-            const target = aiAnswer.answer.toLowerCase();
-            const match = options.find(o => o.text.toLowerCase().includes(target) || target.includes(o.text.toLowerCase()));
+            const target = aiAnswer.answer.toLowerCase().trim();
+            const match = options.find(o =>
+              o.text.toLowerCase() === target ||
+              o.value.toLowerCase() === target ||
+              o.text.toLowerCase().includes(target) ||
+              target.includes(o.text.toLowerCase())
+            );
+            console.log(`[AI Fill] Answer: "${aiAnswer.answer}" | Matched: ${match ? match.text : 'NONE'} | Options: ${options.map(o => o.text).join(', ')}`);
             if (match) {
-              selectEl.value = match.value;
-              selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+              safeSetSelectValue(selectEl, match.value);
+              console.log(`✅ [AI Fill] Set select "${label}" = "${match.value}"`);
               filledFields.push({ label, value: match.text, source: 'ai' });
+              return true;
+            } else {
+              console.warn(`⚠️ [AI Fill] No option matched "${aiAnswer.answer}" in "${label}"`);
             }
           } else {
-            unknownFields.push({ label, type: 'select', required, options: cappedOptions, selector: selectEl.id ? `#${selectEl.id}` : '' });
+            console.warn(`⚠️ [AI Fill] No AI answer for "${label}" (checked ${AI_ANSWERS.length} answers)`);
           }
+          unknownFields.push({ label, type: 'select', required, options: cappedOptions, selector: selectEl.id ? `#${selectEl.id}` : '' });
+          return false;
+        }
+
+        const isBlank = !currentVal || currentVal === '' || currentVal === 'Select an option' || currentVal === 'Select';
+
+        if (!isBooleanSelect && matchToProfile(label) && (!currentVal || OPTIONS.overwrite)) {
+          // Profile-based fill: only for non-boolean selects where profile has a value
+          const profileVal = matchToProfile(label);
+          const target = String(profileVal).toLowerCase();
+          const match = options.find(o => o.text.toLowerCase().includes(target) || target.includes(o.text.toLowerCase()))
+            || options.find(o => o.value.toLowerCase().includes(target));
+          if (match) {
+            safeSetSelectValue(selectEl, match.value);
+            filledFields.push({ label, value: match.text, source: 'profile' });
+          } else {
+            // Profile value didn't match any option — fall back to AI
+            console.log(`[Select] Profile val "${profileVal}" didn't match any option in "${label}", trying AI...`);
+            if (isBlank) tryAiFill();
+            else skippedFields.push({ label, reason: 'profile mismatch, already has value' });
+          }
+        } else if (isBlank) {
+          // Either it's a boolean select, or no profile value — always try AI
+          tryAiFill();
         } else {
-          skippedFields.push({ label, reason: 'already selected' });
+          skippedFields.push({ label, reason: 'already selected', value: currentVal });
         }
         return;
       }
@@ -553,32 +792,134 @@
       const radios = group.querySelectorAll('input[type="radio"]');
       if (radios.length > 0) {
         const isChecked = Array.from(radios).some(r => r.checked);
+
+        // ── Find label by raw .getAttribute('for') comparison — NOT CSS.escape ──
+        // CSS.escape is for #id selectors only. Attribute value selectors [for="..."] need raw string.
+        // LinkedIn radio IDs contain ':' and '()' which CSS.escape wrongly escapes in attr selectors.
+        function findLabelForRadio(radioEl) {
+          if (radioEl.id) {
+            const allLabels = Array.from(document.querySelectorAll('label'));
+            const found = allLabels.find(l => l.getAttribute('for') === radioEl.id);
+            if (found) return found;
+          }
+          return radioEl.closest('label') || null;
+        }
+
         const radioOptions = Array.from(radios).map(r => {
-          const lbl = r.closest('label')?.textContent?.trim() || r.parentElement?.textContent?.trim() || r.value;
-          return { text: lbl, value: r.value, element: r };
+          let lblText = '';
+          const assocLabel = findLabelForRadio(r);
+          if (assocLabel) lblText = assocLabel.textContent.trim().replace(/\s+/g, ' ');
+          if (!lblText) lblText = r.parentElement?.textContent?.trim().replace(/\s+/g, ' ') || r.value;
+          return { text: lblText, value: r.value, element: r };
         });
 
+        // ── Ember-compatible radio click ─────────────────────────────────────────
+        function clickRadio(radioEl) {
+          console.log(`[clickRadio] value="${radioEl.value}" id="${radioEl.id}"`);
+          radioEl.scrollIntoView({ behavior: 'instant', block: 'center' });
+
+          // Step 1: Click the outer Ember container div [data-test-text-selectable-option]
+          const containerDiv = radioEl.closest('[data-test-text-selectable-option]');
+          if (containerDiv) {
+            const rc = containerDiv.getBoundingClientRect();
+            const cxc = rc.left + rc.width / 2, cyc = rc.top + rc.height / 2;
+            const oc = { bubbles: true, cancelable: true, view: window, clientX: cxc, clientY: cyc, button: 0 };
+            containerDiv.dispatchEvent(new MouseEvent('pointerdown', oc));
+            containerDiv.dispatchEvent(new MouseEvent('mousedown', oc));
+            containerDiv.dispatchEvent(new MouseEvent('pointerup', oc));
+            containerDiv.dispatchEvent(new MouseEvent('mouseup', oc));
+            containerDiv.dispatchEvent(new MouseEvent('click', oc));
+            containerDiv.click();
+            console.log('[clickRadio] clicked container div');
+          }
+
+          // Step 2: Click the <label> element (browser natively checks the radio on label click)
+          const labelEl = findLabelForRadio(radioEl);
+          if (labelEl) {
+            const rl = labelEl.getBoundingClientRect();
+            const cxl = rl.left + rl.width / 2, cyl = rl.top + rl.height / 2;
+            const ol = { bubbles: true, cancelable: true, view: window, clientX: cxl, clientY: cyl, button: 0 };
+            labelEl.dispatchEvent(new MouseEvent('pointerdown', ol));
+            labelEl.dispatchEvent(new MouseEvent('mousedown', ol));
+            labelEl.dispatchEvent(new MouseEvent('pointerup', ol));
+            labelEl.dispatchEvent(new MouseEvent('mouseup', ol));
+            labelEl.dispatchEvent(new MouseEvent('click', ol));
+            labelEl.click();
+            console.log(`[clickRadio] clicked label: "${labelEl.textContent.trim()}"`);
+          } else {
+            realClick(radioEl);
+            console.log('[clickRadio] fallback: clicked radio input directly');
+          }
+
+          // Step 3: Use native HTMLInputElement checked setter (bypasses framework overrides)
+          try {
+            const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked')?.set;
+            if (nativeSetter) nativeSetter.call(radioEl, true);
+            else radioEl.checked = true;
+          } catch (e) { radioEl.checked = true; }
+
+          // Step 4: Fire input + change events so Ember/React data binding picks up the change
+          radioEl.dispatchEvent(new Event('input', { bubbles: true }));
+          radioEl.dispatchEvent(new Event('change', { bubbles: true }));
+
+          // Step 5: Simulate keyboard Space (browsers check radio on Space keypress)
+          radioEl.focus();
+          radioEl.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: ' ', code: 'Space', keyCode: 32 }));
+          radioEl.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: ' ', code: 'Space', keyCode: 32 }));
+
+          // Step 6: React fiber onChange hook
+          try {
+            const fiberKey = Object.keys(radioEl).find(k =>
+              k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance') ||
+              k.startsWith('__reactEventHandlers') || k.startsWith('_reactFiber')
+            );
+            if (fiberKey) {
+              const fiber = radioEl[fiberKey];
+              const props = fiber?.memoizedProps || fiber?.pendingProps;
+              if (props?.onChange) props.onChange({ target: radioEl, currentTarget: radioEl, bubbles: true });
+            }
+          } catch (e) { /* ignore */ }
+
+          console.log(`[clickRadio] done. checked=${radioEl.checked}`);
+        }
+
+        // Normalize label — strip error suffix before AI lookup
+        const normalizeLabel = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+        const baseLabel = label.replace(/\s*\(Constraint\/Error:[^)]*\)/gi, '').trim();
+        const normalBase = normalizeLabel(baseLabel);
+
         if (!isChecked || OPTIONS.overwrite) {
-          const profileVal = matchToProfile(label);
+          const profileVal = matchToProfile(baseLabel);
           if (profileVal) {
             const target = String(profileVal).toLowerCase();
             const match = radioOptions.find(o => o.text.toLowerCase().includes(target) || target.includes(o.text.toLowerCase()));
             if (match) {
-              realClick(match.element);
+              clickRadio(match.element);
               filledFields.push({ label, value: match.text, source: 'profile' });
             } else {
               unknownFields.push({ label, type: 'radio', required, options: radioOptions.map(o => o.text) });
             }
           } else {
-            const aiAnswer = AI_ANSWERS.find(a => a.label === label || label.toLowerCase().includes(a.label.toLowerCase()));
+            // Strip error suffix from AI answer labels too before matching
+            const aiAnswer = AI_ANSWERS.find(a => {
+              const normalAI = normalizeLabel(a.label.replace(/\s*\(Constraint\/Error:[^)]*\)/gi, '').trim());
+              return normalBase === normalAI || normalBase.includes(normalAI) || normalAI.includes(normalBase);
+            });
+            console.log(`[Radio] baseLabel="${baseLabel}" | normalBase="${normalBase}" | AI_ANSWERS=[${AI_ANSWERS.map(a => a.label).join(' | ')}]`);
             if (aiAnswer && aiAnswer.answer) {
-              const target = aiAnswer.answer.toLowerCase();
-              const match = radioOptions.find(o => o.text.toLowerCase().includes(target) || target.includes(o.text.toLowerCase()));
+              const target = aiAnswer.answer.toLowerCase().trim();
+              console.log(`[Radio] AI answer="${aiAnswer.answer}" target="${target}" | options=[${radioOptions.map(o => o.text).join(', ')}]`);
+              const match = radioOptions.find(o =>
+                o.text.toLowerCase().trim() === target ||
+                o.text.toLowerCase().includes(target) ||
+                target.includes(o.text.toLowerCase().trim())
+              );
               if (match) {
-                realClick(match.element);
+                clickRadio(match.element);
                 filledFields.push({ label, value: match.text, source: 'ai' });
               } else if (radioOptions[0]) {
-                realClick(radioOptions[0].element);
+                console.warn(`[Radio] No match for "${target}", falling back to first option`);
+                clickRadio(radioOptions[0].element);
                 filledFields.push({ label, value: radioOptions[0].text, source: 'ai-fallback' });
               }
             } else {
@@ -591,16 +932,45 @@
         return;
       }
 
-      // Checkbox
+      // Checkbox / multi-select checkboxes
       const checkboxes = group.querySelectorAll('input[type="checkbox"]');
       if (checkboxes.length > 0) {
+        // Get the full context text — legend (for fieldsets) covers disclaimer text
+        const legendEl = group.querySelector('legend');
+        const legendText = (legendEl?.textContent || '').toLowerCase();
+        const groupText = group.textContent.toLowerCase();
+
+        // Patterns indicating consent/terms/disclaimer — always auto-check these
+        const consentPatterns = [
+          'agree', 'consent', 'confirm', 'accept', 'terms', 'disclaimer',
+          'acknowledge', 'privacy', 'policy', 'authoriz', 'certif', 'declaration',
+          'application', 'i have read', 'i understand', 'sharing', 'data'
+        ];
+
         checkboxes.forEach(cb => {
           if (!cb.checked) {
-            const cbLabel = cb.closest('label')?.textContent?.toLowerCase() || label.toLowerCase();
-            if (cbLabel.includes('agree') || cbLabel.includes('consent') || cbLabel.includes('confirm') || cbLabel.includes('follow') || required) {
-              realClick(cb);
-              filledFields.push({ label: cbLabel, value: 'checked', source: 'auto' });
+            const cbIdDesc = cb.id ? CSS.escape(cb.id) : '';
+            const cbLabelEl = cbIdDesc ? document.querySelector(`label[for="${cbIdDesc}"]`) : cb.closest('label');
+            const cbLabelText = (cbLabelEl?.textContent || '').toLowerCase().trim();
+
+            // Check cbLabel, legend, and group text for consent patterns
+            const textToCheck = cbLabelText + ' ' + legendText + ' ' + groupText;
+            const isConsent = consentPatterns.some(p => textToCheck.includes(p));
+
+            if (isConsent || required) {
+              console.log(`[Checkbox] Auto-checking: "${cbLabelText || label}" (consent/terms detected)`);
+              if (cbLabelEl) realClick(cbLabelEl);
+              else {
+                realClick(cb);
+                cb.checked = true;
+                cb.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+              filledFields.push({ label: cbLabelText || label, value: 'checked', source: 'auto' });
+            } else {
+              unknownFields.push({ label: cbLabelText || label, type: 'checkbox', required, options: ['Yes', 'No'] });
             }
+          } else {
+            skippedFields.push({ label, reason: 'checkbox already checked' });
           }
         });
         return;
@@ -626,13 +996,13 @@
     // Determine what buttons are available in the modal footer
     const footer = modal.querySelector('.jobs-easy-apply-modal__footer, .artdeco-modal__actionbar, footer');
     const buttons = {};
-    
+
     if (footer) {
       const footerBtns = footer.querySelectorAll('button');
       footerBtns.forEach(btn => {
         const text = btn.textContent.trim().toLowerCase();
         const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-        
+
         if (text.includes('next') || ariaLabel.includes('next step') || ariaLabel.includes('continue')) buttons.next = true;
         if (text.includes('review') || ariaLabel.includes('review')) buttons.review = true;
         if (text.includes('submit') || ariaLabel.includes('submit application')) buttons.submit = true;
@@ -821,16 +1191,16 @@
   else if (ACTION === 'checkStatus') {
     const modal = document.querySelector('.jobs-easy-apply-modal, .artdeco-modal--layer-default');
     const successMsg = document.querySelector('.artdeco-inline-feedback--success, .artdeco-toast-item--visible');
-    const successText = document.body.textContent.includes('Your application was sent') || 
-                        document.body.textContent.includes('Application submitted') ||
-                        document.body.textContent.includes('application was submitted');
+    const successText = document.body.textContent.includes('Your application was sent') ||
+      document.body.textContent.includes('Application submitted') ||
+      document.body.textContent.includes('application was submitted');
 
     const applyBtn = document.querySelector('.jobs-apply-button');
     const showsApplied = applyBtn?.textContent?.includes('Applied');
 
     if (successMsg || successText || showsApplied || !modal) {
       result.success = true;
-      result.data = { 
+      result.data = {
         applicationSent: true,
         hasSuccessMessage: !!successMsg || successText,
         showsApplied: !!showsApplied,
@@ -839,10 +1209,10 @@
     } else {
       const errorMsgs = modal.querySelectorAll('.artdeco-inline-feedback--error, .fb-dash-form-element__error');
       const errors = Array.from(errorMsgs).map(e => e.textContent.trim()).filter(Boolean);
-      
+
       result.success = false;
-      result.data = { 
-        applicationSent: false, 
+      result.data = {
+        applicationSent: false,
         modalStillOpen: true,
         validationErrors: errors
       };
@@ -854,7 +1224,7 @@
   // ═══════════════════════════════════════════════════
   else if (ACTION === 'scrollJobList') {
     const seeMoreBtn = document.querySelector('.jobs-search-results-list__pagination button, .infinite-scroller__show-more-button, button[aria-label="See more jobs"]');
-    
+
     if (seeMoreBtn) {
       realClick(seeMoreBtn);
       result.success = true;

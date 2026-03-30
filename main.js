@@ -117,7 +117,33 @@ const isOAuthUrl = (url) => url && OAUTH_HOSTS.some(h => url.includes(h));
 app.on('web-contents-created', (event, contents) => {
   contents.setWindowOpenHandler(({ url, disposition }) => {
 
-    // Only allow Google Forms/Drive upload popups when a file upload is pending
+    // Allow Google OAuth / Sign-In popups as real browser windows
+    // (Google's GSI / One Tap button MUST open in a real popup — it won't work inside a webview tab)
+    const isOAuthPopup = isOAuthUrl(url) ||
+      url.includes('accounts.google.com') ||
+      url.includes('/oauth') ||
+      url.includes('/signin') ||
+      url.includes('appleid.apple.com') ||
+      url.includes('login.microsoftonline.com');
+
+    if (isOAuthPopup) {
+      console.log('🔐 Allowing OAuth popup:', url);
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 500,
+          height: 650,
+          autoHideMenuBar: true,
+          webPreferences: {
+            partition: 'persist:massapply',
+            nodeIntegration: false,
+            contextIsolation: true
+          }
+        }
+      };
+    }
+
+    // Allow Google Forms/Drive upload popups when a file upload is pending
     const isUploadPopup = pendingResumeUpload &&
       (url.includes('docs.google.com') || url.includes('drive.google.com') ||
         url.includes('accounts.google.com') || url.includes('picker'));

@@ -225,65 +225,77 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     tabsScroll.appendChild(tabEl);
-// Create webview
-const wv = document.createElement('webview');
-wv.id = id;
-wv.setAttribute('src', url || 'about:blank');
-wv.setAttribute('allowpopups', '');
-wv.setAttribute('webpreferences', 'nativeWindowOpen=no');
-wv.setAttribute('partition', 'persist:massapply');
-// Use Chrome/134 UA to match the session-level UA set in main.js (CLEAN_UA)
-// All tabs share the same partition so Google sign-in cookies apply everywhere.
-wv.setAttribute('useragent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36');
-wv.style.width = '100%';
-wv.style.height = '100%';
+    // Create webview
+    const wv = document.createElement('webview');
+    wv.id = id;
+    wv.setAttribute('src', url || 'about:blank');
+    wv.setAttribute('allowpopups', '');
+    wv.setAttribute('webpreferences', 'nativeWindowOpen=no');
+    wv.setAttribute('partition', 'persist:massapply');
+    // Use Chrome/134 UA to match the session-level UA set in main.js (CLEAN_UA)
+    // All tabs share the same partition so Google sign-in cookies apply everywhere.
+    wv.setAttribute('useragent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36');
+    wv.style.width = '100%';
+    wv.style.height = '100%';
 
-// *** CRITICAL: Attach new-window handler BEFORE appending to DOM ***
-wv.addEventListener('new-window', (e) => {
-  // Always open in a new tab inside the app.
-  // This is the KEY fix for Google sign-in:
-  //   - Opening as an external popup = Google blocks it ("Couldn't sign you in")
-  //   - Opening inside a webview tab = works perfectly, cookies shared via persist:massapply
-  e.preventDefault();
-  const newUrl = e.url || '';
-  if (!newUrl || newUrl === 'about:blank') return;
-  console.log('🔗 new-window → opening inside app tab:', newUrl);
-  const newTabId = createTab(newUrl, 'Loading...');
-  switchTab(newTabId);
-});
+    // *** CRITICAL: Attach new-window handler BEFORE appending to DOM ***
+    wv.addEventListener('new-window', (e) => {
+      const newUrl = e.url || '';
+      if (!newUrl || newUrl === 'about:blank') return;
 
-// Append to container AFTER attaching event listeners
-webviewContainer.appendChild(wv);
+      // Let OAuth / Sign-In URLs open as real popup windows (handled by main.js setWindowOpenHandler).
+      // Google's GSI "Continue with" button MUST open in a real popup — webview tab breaks the auth flow.
+      const isAuthUrl = newUrl.includes('accounts.google.com') ||
+        newUrl.includes('/oauth') ||
+        newUrl.includes('/signin') ||
+        newUrl.includes('appleid.apple.com') ||
+        newUrl.includes('login.microsoftonline.com');
 
-// Standard webview events
+      if (isAuthUrl) {
+        console.log('🔐 new-window → OAuth URL, letting main.js handle as popup:', newUrl);
+        // Do NOT preventDefault — this lets setWindowOpenHandler in main.js open it as a real popup
+        return;
+      }
 
-wv.addEventListener('did-stop-loading', () => {
-  updateTabLoading(id, false);
-});
+      // All other new-window requests: open as in-app tab
+      e.preventDefault();
+      console.log('🔗 new-window → opening inside app tab:', newUrl);
+      const newTabId = createTab(newUrl, 'Loading...');
+      switchTab(newTabId);
+    });
 
-wv.addEventListener('page-title-updated', (e) => {
-  updateTabTitle(id, e.title);
-});
+    // Append to container AFTER attaching event listeners
+    webviewContainer.appendChild(wv);
 
-wv.addEventListener('did-navigate', (e) => {
-  const tab = tabs.find(t => t.id === id);
-  if (tab) tab.url = e.url;
-  if (activeTabId === id) addressInput.value = e.url;
-  addToHistory(e.url, tab?.title || '');
-});
+    // Standard webview events
 
-wv.addEventListener('did-navigate-in-page', (e) => {
-  if (e.isMainFrame) {
-    const tab = tabs.find(t => t.id === id);
-    if (tab) tab.url = e.url;
-    if (activeTabId === id) addressInput.value = e.url;
-  }
-});
+    wv.addEventListener('did-stop-loading', () => {
+      updateTabLoading(id, false);
+    });
 
-// Run stealth scripts as early as possible
-wv.addEventListener('did-start-loading', () => {
-  updateTabLoading(id, true);
-  wv.executeJavaScript(`
+    wv.addEventListener('page-title-updated', (e) => {
+      updateTabTitle(id, e.title);
+    });
+
+    wv.addEventListener('did-navigate', (e) => {
+      const tab = tabs.find(t => t.id === id);
+      if (tab) tab.url = e.url;
+      if (activeTabId === id) addressInput.value = e.url;
+      addToHistory(e.url, tab?.title || '');
+    });
+
+    wv.addEventListener('did-navigate-in-page', (e) => {
+      if (e.isMainFrame) {
+        const tab = tabs.find(t => t.id === id);
+        if (tab) tab.url = e.url;
+        if (activeTabId === id) addressInput.value = e.url;
+      }
+    });
+
+    // Run stealth scripts as early as possible
+    wv.addEventListener('did-start-loading', () => {
+      updateTabLoading(id, true);
+      wv.executeJavaScript(`
     try {
       Object.defineProperty(navigator, 'webdriver', { get: () => false });
       Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
@@ -291,11 +303,11 @@ wv.addEventListener('did-start-loading', () => {
       window.chrome = window.chrome || { runtime: {} };
     } catch(e) {}
   `);
-});
+    });
 
-// Inject window.open interceptor + context menu after DOM is ready
-wv.addEventListener('dom-ready', () => {
-  wv.executeJavaScript(`
+    // Inject window.open interceptor + context menu after DOM is ready
+    wv.addEventListener('dom-ready', () => {
+      wv.executeJavaScript(`
     (function() {
       // Intercept window.open calls
       const originalOpen = window.open;
@@ -369,33 +381,33 @@ wv.addEventListener('dom-ready', () => {
       });
     })();
   `).catch(err => console.log('Could not inject interceptor:', err));
-});
+    });
 
-// Suppress certificate error spam + handle context menu messages
-wv.addEventListener('console-message', (e) => {
-  if (e.message.includes('CertVerifyProcBuiltin') || 
-      e.message.includes('pfSense') ||
-      e.message.includes('pfBNG-DNSBL') ||
-      e.message.includes('ERROR: No matching issuer')) {
-    return;
-  }
-  // Handle context menu data from injected script
-  if (e.message.startsWith('__CTX_MENU__')) {
-    try {
-      const data = JSON.parse(e.message.replace('__CTX_MENU__', ''));
-      showContextMenu(data, wv, id);
-    } catch (err) {
-      console.log('Context menu parse error:', err);
-    }
-  }
-});
+    // Suppress certificate error spam + handle context menu messages
+    wv.addEventListener('console-message', (e) => {
+      if (e.message.includes('CertVerifyProcBuiltin') ||
+        e.message.includes('pfSense') ||
+        e.message.includes('pfBNG-DNSBL') ||
+        e.message.includes('ERROR: No matching issuer')) {
+        return;
+      }
+      // Handle context menu data from injected script
+      if (e.message.startsWith('__CTX_MENU__')) {
+        try {
+          const data = JSON.parse(e.message.replace('__CTX_MENU__', ''));
+          showContextMenu(data, wv, id);
+        } catch (err) {
+          console.log('Context menu parse error:', err);
+        }
+      }
+    });
 
-// Handle downloads
-wv.addEventListener('will-download', (e, item) => {
-  console.log('📥 Download started:', item.getFilename?.() || 'file');
-  toast('📥 Downloading file', 'info');
-});
- 
+    // Handle downloads
+    wv.addEventListener('will-download', (e, item) => {
+      console.log('📥 Download started:', item.getFilename?.() || 'file');
+      toast('📥 Downloading file', 'info');
+    });
+
     switchTab(id);
     if (url) saveTabs();
     return id;
@@ -566,8 +578,8 @@ wv.addEventListener('will-download', (e, item) => {
 
     const filtered = filter
       ? browsingHistory.filter(h =>
-          h.title.toLowerCase().includes(filter.toLowerCase()) ||
-          h.url.toLowerCase().includes(filter.toLowerCase()))
+        h.title.toLowerCase().includes(filter.toLowerCase()) ||
+        h.url.toLowerCase().includes(filter.toLowerCase()))
       : browsingHistory;
 
     if (filtered.length === 0) {
@@ -581,7 +593,7 @@ wv.addEventListener('will-download', (e, item) => {
       const date = new Date(h.timestamp);
       const key = isToday(date) ? 'Today'
         : isYesterday(date) ? 'Yesterday'
-        : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       if (!groups[key]) groups[key] = [];
       groups[key].push(h);
     });
@@ -754,28 +766,28 @@ wv.addEventListener('will-download', (e, item) => {
         </div>
       </div>
       <div class="work-exp-grid">
-        <label class="full">Company Name<input type="text" data-we="company" placeholder="Infosys / TCS" value="${escapeHtml(data.company||'')}"></label>
-        <label>Designation on Joining<input type="text" data-we="designationJoining" placeholder="Junior Developer" value="${escapeHtml(data.designationJoining||'')}"></label>
-        <label>Designation on Leaving<input type="text" data-we="designationLeaving" placeholder="Senior Developer" value="${escapeHtml(data.designationLeaving||data.designation||'')}"></label>
-        <label>Country<input type="text" data-we="workCountry" placeholder="India" value="${escapeHtml(data.workCountry||'')}"></label>
-        <label>State<input type="text" data-we="workState" placeholder="Maharashtra" value="${escapeHtml(data.workState||'')}"></label>
-        <label>City<input type="text" data-we="workCity" placeholder="Mumbai" value="${escapeHtml(data.workCity||'')}"></label>
-        <label>Sector / Industry<input type="text" data-we="sector" placeholder="IT / Software" value="${escapeHtml(data.sector||'')}"></label>
+        <label class="full">Company Name<input type="text" data-we="company" placeholder="Infosys / TCS" value="${escapeHtml(data.company || '')}"></label>
+        <label>Designation on Joining<input type="text" data-we="designationJoining" placeholder="Junior Developer" value="${escapeHtml(data.designationJoining || '')}"></label>
+        <label>Designation on Leaving<input type="text" data-we="designationLeaving" placeholder="Senior Developer" value="${escapeHtml(data.designationLeaving || data.designation || '')}"></label>
+        <label>Country<input type="text" data-we="workCountry" placeholder="India" value="${escapeHtml(data.workCountry || '')}"></label>
+        <label>State<input type="text" data-we="workState" placeholder="Maharashtra" value="${escapeHtml(data.workState || '')}"></label>
+        <label>City<input type="text" data-we="workCity" placeholder="Mumbai" value="${escapeHtml(data.workCity || '')}"></label>
+        <label>Sector / Industry<input type="text" data-we="sector" placeholder="IT / Software" value="${escapeHtml(data.sector || '')}"></label>
         <label>Work Experience Type<select data-we="empType">
           <option value="">Select...</option>${empTypeOptions}
         </select></label>
-        <label>Start Date<input type="text" data-we="startDate" placeholder="Jan 2023 / 2023-01" value="${escapeHtml(data.startDate||'')}"></label>
+        <label>Start Date<input type="text" data-we="startDate" placeholder="Jan 2023 / 2023-01" value="${escapeHtml(data.startDate || '')}"></label>
         <label>End Date
           <span style="display:flex;gap:6px;align-items:center;">
-            <input type="text" data-we="endDate" placeholder="Dec 2024" value="${escapeHtml(data.endDate||'')}" style="flex:1;">
+            <input type="text" data-we="endDate" placeholder="Dec 2024" value="${escapeHtml(data.endDate || '')}" style="flex:1;">
             <label style="display:flex;align-items:center;gap:3px;font-size:9px;white-space:nowrap;text-transform:none;letter-spacing:0;">
               <input type="checkbox" data-we="currentlyWorking" ${currentlyChecked} style="width:12px;height:12px;accent-color:var(--accent);"> Currently&nbsp;Working
             </label>
           </span>
         </label>
-        <label>Annual Compensation<input type="text" data-we="compensation" placeholder="6 LPA / 500000" value="${escapeHtml(data.compensation||'')}"></label>
-        <label>Number of Months<input type="number" data-we="numMonths" placeholder="12" min="0" value="${escapeHtml(data.numMonths||'')}"></label>
-        <label class="full">Key Responsibilities<textarea data-we="description" rows="2" placeholder="Key responsibilities, achievements, technologies used...">${escapeHtml(data.description||'')}</textarea></label>
+        <label>Annual Compensation<input type="text" data-we="compensation" placeholder="6 LPA / 500000" value="${escapeHtml(data.compensation || '')}"></label>
+        <label>Number of Months<input type="number" data-we="numMonths" placeholder="12" min="0" value="${escapeHtml(data.numMonths || '')}"></label>
+        <label class="full">Key Responsibilities<textarea data-we="description" rows="2" placeholder="Key responsibilities, achievements, technologies used...">${escapeHtml(data.description || '')}</textarea></label>
       </div>
     `;
 
@@ -848,23 +860,23 @@ wv.addEventListener('will-download', (e, item) => {
     $('#btn-screenshot').addEventListener('click', () => takeScreenshotToClipboard());
   }
 
-// ═══ SETTINGS ═══
-async function loadSettings() {
-  settings = await window.api.settings.get();
-  $('#set-geminiApiKey').value = settings.geminiApiKey || '';
-  $('#set-autoSubmit').value = String(settings.autoSubmit !== false);
-  if ($('#set-resumePath')) $('#set-resumePath').value = settings.resumePath || '';
-}
+  // ═══ SETTINGS ═══
+  async function loadSettings() {
+    settings = await window.api.settings.get();
+    $('#set-geminiApiKey').value = settings.geminiApiKey || '';
+    $('#set-autoSubmit').value = String(settings.autoSubmit !== false);
+    if ($('#set-resumePath')) $('#set-resumePath').value = settings.resumePath || '';
+  }
 
-// Open Gemini API key page in new tab
-const linkGeminiKey = document.getElementById('link-gemini-key');
-if (linkGeminiKey) {
-  linkGeminiKey.addEventListener('click', (e) => {
-    e.preventDefault();
-    createTab('https://aistudio.google.com/app/apikey', 'Get Gemini API Key');
-    toast('Opening Google AI Studio...', 'info');
-  });
-}
+  // Open Gemini API key page in new tab
+  const linkGeminiKey = document.getElementById('link-gemini-key');
+  if (linkGeminiKey) {
+    linkGeminiKey.addEventListener('click', (e) => {
+      e.preventDefault();
+      createTab('https://aistudio.google.com/app/apikey', 'Get Gemini API Key');
+      toast('Opening Google AI Studio...', 'info');
+    });
+  }
 
   // ═══ CACHE & SITE DATA ═══
   const btnShowCache = $('#btn-show-cache');
@@ -889,7 +901,7 @@ if (linkGeminiKey) {
           row.style.alignItems = 'center';
           row.style.padding = '6px 4px';
           row.style.borderBottom = '1px solid #333';
-          
+
           row.innerHTML = `
             <div style="display:flex;align-items:center;gap:6px;overflow:hidden;">
               <span class="material-icons-round" style="font-size:16px;color:#888;">public</span>
@@ -899,7 +911,7 @@ if (linkGeminiKey) {
               <span class="material-icons-round" style="font-size:18px;">delete</span>
             </button>
           `;
-          
+
           row.querySelector('.cache-del-btn').addEventListener('click', async () => {
             row.style.opacity = '0.5';
             row.style.pointerEvents = 'none';
@@ -909,10 +921,10 @@ if (linkGeminiKey) {
               siteDataList.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">No site data found.</div>';
             }
           });
-          
+
           siteDataList.appendChild(row);
         });
-      } catch(e) {
+      } catch (e) {
         siteDataList.innerHTML = `<div style="color:#ff5252;font-size:12px;">Error: ${e.message}</div>`;
       }
     });
@@ -922,12 +934,12 @@ if (linkGeminiKey) {
         btnShowCache.disabled = true;
         btnClearCache.disabled = true;
         btnClearCache.innerHTML = '<span class="material-icons-round">hourglass_empty</span> Resetting...';
-        
+
         await window.api.appData.clearAllSiteData();
-        
+
         siteDataList.style.display = 'block';
         siteDataList.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">Session reset and all site data cleared.</div>';
-        
+
         // Reload the webview to start fresh
         try {
           if (wv && typeof wv.reload === 'function') {
@@ -962,7 +974,7 @@ if (linkGeminiKey) {
   async function loadShortcuts() {
     try {
       shortcuts = await window.api.shortcuts.get();
-    } catch(e) {
+    } catch (e) {
       shortcuts = [];
     }
     if (!shortcuts || shortcuts.length === 0) {
@@ -973,7 +985,7 @@ if (linkGeminiKey) {
         { name: 'LinkedIn', url: 'https://www.linkedin.com' },
         { name: 'Gmail', url: 'https://mail.google.com' }
       ];
-      try { await window.api.shortcuts.save(shortcuts); } catch(e) {}
+      try { await window.api.shortcuts.save(shortcuts); } catch (e) { }
     } else {
       // Migrate old broken URLs
       const urlFixes = {
@@ -985,7 +997,7 @@ if (linkGeminiKey) {
         if (urlFixes[sc.url]) { sc.url = urlFixes[sc.url]; changed = true; }
       });
       if (changed) {
-        try { await window.api.shortcuts.save(shortcuts); } catch(e) {}
+        try { await window.api.shortcuts.save(shortcuts); } catch (e) { }
       }
     }
     renderShortcuts();
@@ -1003,7 +1015,7 @@ if (linkGeminiKey) {
       };
       domain = domainMap[domain] || domain;
       return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
-    } catch(e) {
+    } catch (e) {
       return '';
     }
   }
@@ -1025,9 +1037,9 @@ if (linkGeminiKey) {
       el.innerHTML = `
         <div class="sc-icon">
           ${iconUrl
-            ? `<img src="${iconUrl}" class="sc-img" onerror="this.remove();this.parentElement.innerHTML='<span class=\\'material-icons-round\\'>public</span>'">`
-            : `<span class="material-icons-round">public</span>`
-          }
+          ? `<img src="${iconUrl}" class="sc-img" onerror="this.remove();this.parentElement.innerHTML='<span class=\\'material-icons-round\\'>public</span>'">`
+          : `<span class="material-icons-round">public</span>`
+        }
         </div>
         <span class="sc-title">${escapeHtml(sc.name)}</span>
         <div class="sc-delete"><span class="material-icons-round">close</span></div>
@@ -1043,7 +1055,7 @@ if (linkGeminiKey) {
       el.querySelector('.sc-delete').addEventListener('click', async (e) => {
         e.stopPropagation();
         shortcuts.splice(index, 1);
-        try { await window.api.shortcuts.save(shortcuts); } catch(e) {}
+        try { await window.api.shortcuts.save(shortcuts); } catch (e) { }
         renderShortcuts();
       });
 
@@ -1073,7 +1085,7 @@ if (linkGeminiKey) {
           // Swap in array
           const moved = shortcuts.splice(dragSrcIndex, 1)[0];
           shortcuts.splice(targetIndex, 0, moved);
-          try { await window.api.shortcuts.save(shortcuts); } catch(e) {}
+          try { await window.api.shortcuts.save(shortcuts); } catch (e) { }
           renderShortcuts();
         }
         dragSrcIndex = null;
@@ -1283,7 +1295,7 @@ if (linkGeminiKey) {
           case 'selectAll':
             try {
               wv.executeJavaScript('document.execCommand("selectAll")');
-            } catch (err) {}
+            } catch (err) { }
             break;
 
           case 'back':
@@ -1351,7 +1363,7 @@ if (linkGeminiKey) {
     if (!url.startsWith('http')) url = 'https://' + url;
 
     shortcuts.push({ name, url });
-    try { await window.api.shortcuts.save(shortcuts); } catch(e) {}
+    try { await window.api.shortcuts.save(shortcuts); } catch (e) { }
     renderShortcuts();
     modalOverlay.classList.remove('active');
     toast('Shortcut added!', 'success');
@@ -1492,7 +1504,7 @@ if (linkGeminiKey) {
               let uploadResult = null;
               let uploadMethod = '';
               let pathToUpload = resumePath;
-              
+
               if (fileField.label && fileField.label.toLowerCase().includes('cover letter')) {
                 const coverLetterPath = profile.coverLetterPath || '';
                 if (coverLetterPath) {
@@ -1601,7 +1613,7 @@ if (linkGeminiKey) {
           if (newUrl !== currentUrl) {
             log('success', '🎉 Page navigated — submission confirmed!');
           }
-        } catch(e) {
+        } catch (e) {
           log('warn', '⚠️ Auto-submit may have failed: ' + e.message);
         }
       }
@@ -1740,7 +1752,11 @@ if (linkGeminiKey) {
                           document.querySelector('.job-interest-form') !== null);
         const isWellfound = (window.location.hostname.includes('wellfound.com') ||
                              window.location.hostname.includes('angel.co')) &&
-                            !!document.querySelector('[data-test="JobApplication-Modal"]');
+                            !!(
+                              document.querySelector('[data-test="JobApplication-Modal"]') ||
+                              document.querySelector('[data-test="JobApplicationModal--SubmitButton"]') ||
+                              document.querySelector('[class*="styles_modal__"]')
+                            );
         let filled = 0;
 
         function safeSet(el, value) {
@@ -2097,7 +2113,7 @@ if (linkGeminiKey) {
       gain.connect(ctx.destination);
       osc.start();
       liBeepOscillator = { oscillator: osc, context: ctx };
-    } catch(e) { console.warn('Beep failed:', e); }
+    } catch (e) { console.warn('Beep failed:', e); }
   }
 
   function liStopBeep() {
@@ -2105,7 +2121,7 @@ if (linkGeminiKey) {
       try {
         liBeepOscillator.oscillator.stop();
         liBeepOscillator.context.close();
-      } catch(e) {}
+      } catch (e) { }
       liBeepOscillator = null;
     }
   }
@@ -2156,6 +2172,11 @@ if (linkGeminiKey) {
   }
 
   async function linkedinAutoApply() {
+    if (liIsRunning) {
+      toast('LinkedIn automation is already running!', 'warning');
+      return;
+    }
+
     const wv = webviewContainer.querySelector(`#${activeTabId}`);
     if (!wv) { toast('Open LinkedIn job search first!', 'error'); return; }
 
@@ -2277,7 +2298,7 @@ if (linkGeminiKey) {
                 ].filter(Boolean).join('\n');
                 log('info', `  📋 Got job description (${jobDescText.length} chars)`);
               }
-            } catch(e) { log('warn', '  ⚠️ Could not get job description'); }
+            } catch (e) { log('warn', '  ⚠️ Could not get job description'); }
 
             // Process multi-step form
             let stepCount = 0;
@@ -2294,7 +2315,7 @@ if (linkGeminiKey) {
 
               // Fill current step
               const fillResult = await liInject(wv, 'fillStep');
-              
+
               if (!fillResult.success) {
                 if (fillResult.error === 'NO_MODAL_FOUND') {
                   log('info', '  Modal closed, checking status...');
@@ -2337,19 +2358,25 @@ if (linkGeminiKey) {
                     userProfile: profile
                   });
 
+                  console.log(`🤖 AI answers received (${(aiAnswers || []).length} total):`, JSON.stringify(aiAnswers, null, 2));
+
                   // Filter valid answers
                   const validAiAnswers = (aiAnswers || []).filter(a => a && a.answer && a.answer.trim() && a.answer !== 'N/A');
+                  console.log(`🤖 Valid AI answers (${validAiAnswers.length}):`, JSON.stringify(validAiAnswers, null, 2));
 
                   if (validAiAnswers.length > 0) {
                     const aiFillResult = await liInject(wv, 'fillStep', { aiAnswers: validAiAnswers });
                     if (aiFillResult.success) {
                       const newAiFilled = aiFillResult.data.filledFields.filter(f => f.source === 'ai').length;
                       log('success', `  ✅ AI filled ${newAiFilled} additional fields`);
+                      console.log('✅ aiFillResult.data:', JSON.stringify(aiFillResult.data, null, 2));
+                    } else {
+                      console.warn('⚠️ aiFillResult failed:', aiFillResult);
                     }
                   } else {
                     log('warn', `  ⚠️ AI returned no valid answers for ${questionsForAI.length} questions`);
                   }
-                } catch(aiErr) {
+                } catch (aiErr) {
                   log('error', `  ❌ AI error: ${aiErr.message}`);
                 }
               }
@@ -2380,7 +2407,7 @@ if (linkGeminiKey) {
                       } else {
                         log('warn', `  ⚠️ Upload: ${uploadResult.error}`);
                       }
-                    } catch(err) {
+                    } catch (err) {
                       log('error', `  ❌ Upload error: ${err.message}`);
                     }
                   }
@@ -2454,7 +2481,7 @@ if (linkGeminiKey) {
               log('success', `✅ Applied to: ${job.title} at ${job.company}`);
               // Dismiss any post-submit modal
               await liDelay(1000);
-              try { await liInject(wv, 'dismissModal'); } catch(e) {}
+              try { await liInject(wv, 'dismissModal'); } catch (e) { }
             } else {
               liFailedCount++;
               log('warn', `❌ Could not complete application for: ${job.title}`);
@@ -2462,7 +2489,7 @@ if (linkGeminiKey) {
               try {
                 await liInject(wv, 'dismissModal');
                 await liDelay(1500);
-              } catch(e) {}
+              } catch (e) { }
             }
 
             liUpdateProgress();
@@ -2476,7 +2503,7 @@ if (linkGeminiKey) {
             log('error', `❌ Error with ${job.title}: ${error.message}`);
             liUpdateProgress();
             // Try to dismiss any open modal
-            try { await liInject(wv, 'dismissModal'); } catch(e) {}
+            try { await liInject(wv, 'dismissModal'); } catch (e) { }
             await liDelay(2000);
           }
         }
@@ -2539,7 +2566,7 @@ if (linkGeminiKey) {
         }
         linkedinAutoApply();
       });
-    } catch(e) {
+    } catch (e) {
       linkedinAutoApply(); // Try anyway
     }
   });
@@ -2628,7 +2655,7 @@ if (linkGeminiKey) {
         if (activeTabId) {
           const wv = webviewContainer.querySelector(`#${activeTabId}`);
           if (wv) {
-            try { wv.focus(); } catch(e) {}
+            try { wv.focus(); } catch (e) { }
           }
         }
       }
@@ -2651,8 +2678,8 @@ if (linkGeminiKey) {
     await loadSavedTabs();
 
     // Pre-load injector scripts
-    try { injectorScript = await window.api.engine.getInjectorScript(); } catch(e) {}
-    try { liInjectorScript = await window.api.engine.getLinkedInInjector(); } catch(e) {}
+    try { injectorScript = await window.api.engine.getInjectorScript(); } catch (e) { }
+    try { liInjectorScript = await window.api.engine.getLinkedInInjector(); } catch (e) { }
 
     // If no tabs, show shortcuts
     if (tabs.length === 0) shortcutsPage.classList.add('active');
@@ -2662,13 +2689,13 @@ if (linkGeminiKey) {
       leftPanel.classList.add('open');
     }
     // Listen for new tab creation requests from main process
-if (window.api.tabs && window.api.tabs.onTabCreate) {
-  window.api.tabs.onTabCreate((newTab) => {
-    console.log('📂 Creating tab from main process:', newTab.url);
-    createTab(newTab.url, newTab.title || 'Loading...');
-    toast('Opened in new tab', 'success');
-  });
-}
+    if (window.api.tabs && window.api.tabs.onTabCreate) {
+      window.api.tabs.onTabCreate((newTab) => {
+        console.log('📂 Creating tab from main process:', newTab.url);
+        createTab(newTab.url, newTab.title || 'Loading...');
+        toast('Opened in new tab', 'success');
+      });
+    }
   }
 
   init();

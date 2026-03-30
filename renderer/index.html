@@ -1,15 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MassApply</title>
   <link rel="stylesheet" href="styles.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 
 </head>
+
 <body>
   <!-- ═══ Title Bar (with inline tabs) ═══ -->
   <div class="titlebar">
@@ -98,7 +101,7 @@
           <button class="btn-save-profile" id="btn-save-profile">
             <span class="material-icons-round">save</span> Save Profile
           </button>
-          <div style="margin-top: 10px;" class="pf-section">    
+          <div style="margin-top: 10px;" class="pf-section">
             <h3 class="pf-title">Personal</h3>
             <div class="pf-grid">
               <label>First Name<input type="text" data-field="firstName" placeholder="John"></label>
@@ -108,7 +111,8 @@
               <!-- Phone with Country Code -->
               <label class="full phone-field-wrap">Phone / Mobile
                 <div class="phone-input-row" style="display: flex; gap: 6px; align-items: center;">
-                  <select data-field="countryCode" class="country-code-select" style="flex-shrink: 0; width: 130px; font-size: 11px; padding: 7px 24px 7px 8px;">
+                  <select data-field="countryCode" class="country-code-select"
+                    style="flex-shrink: 0; width: 130px; font-size: 11px; padding: 7px 24px 7px 8px;">
                     <option value="+91">🇮🇳 +91 India</option>
                     <option value="+1">🇺🇸 +1 USA/Canada</option>
                     <option value="+44">🇬🇧 +44 UK</option>
@@ -151,14 +155,16 @@
                     <option value="+54">🇦🇷 +54 Argentina</option>
                     <option value="+57">🇨🇴 +57 Colombia</option>
                   </select>
-                  <input type="tel" data-field="phone" placeholder="9876543210" class="phone-number-input" style="flex: 1; min-width: 0; font-size: 12px; padding: 7px 10px;">
+                  <input type="tel" data-field="phone" placeholder="9876543210" class="phone-number-input"
+                    style="flex: 1; min-width: 0; font-size: 12px; padding: 7px 10px;">
                 </div>
               </label>
 
               <!-- Alternate Phone -->
               <label class="full phone-field-wrap">Alternate Phone (Optional)
                 <div class="phone-input-row" style="display: flex; gap: 6px; align-items: center;">
-                  <select data-field="altCountryCode" class="country-code-select" style="flex-shrink: 0; width: 130px; font-size: 11px; padding: 7px 24px 7px 8px;">
+                  <select data-field="altCountryCode" class="country-code-select"
+                    style="flex-shrink: 0; width: 130px; font-size: 11px; padding: 7px 24px 7px 8px;">
                     <option value="+91">🇮🇳 +91 India</option>
                     <option value="+1">🇺🇸 +1 USA/Canada</option>
                     <option value="+44">🇬🇧 +44 UK</option>
@@ -201,7 +207,8 @@
                     <option value="+54">🇦🇷 +54 Argentina</option>
                     <option value="+57">🇨🇴 +57 Colombia</option>
                   </select>
-                  <input type="tel" data-field="alternatePhone" placeholder="1234567890" class="phone-number-input" style="flex: 1; min-width: 0; font-size: 12px; padding: 7px 10px;">
+                  <input type="tel" data-field="alternatePhone" placeholder="1234567890" class="phone-number-input"
+                    style="flex: 1; min-width: 0; font-size: 12px; padding: 7px 10px;">
                 </div>
               </label>
               <label>DOB<input type="date" data-field="dateOfBirth"></label>
@@ -221,9 +228,12 @@
           <div class="pf-section">
             <h3 class="pf-title">Identity Documents</h3>
             <div class="pf-grid">
-              <label>Aadhaar No.<input type="text" data-field="aadhaarNo" placeholder="XXXX XXXX XXXX" maxlength="14"></label>
-              <label>PAN No.<input type="text" data-field="panNo" placeholder="ABCDE1234F" maxlength="10" style="text-transform:uppercase"></label>
-              <label>Voter ID<input type="text" data-field="voterId" placeholder="ABC1234567" maxlength="12" style="text-transform:uppercase"></label>
+              <label>Aadhaar No.<input type="text" data-field="aadhaarNo" placeholder="XXXX XXXX XXXX"
+                  maxlength="14"></label>
+              <label>PAN No.<input type="text" data-field="panNo" placeholder="ABCDE1234F" maxlength="10"
+                  style="text-transform:uppercase"></label>
+              <label>Voter ID<input type="text" data-field="voterId" placeholder="ABC1234567" maxlength="12"
+                  style="text-transform:uppercase"></label>
             </div>
           </div>
 
@@ -231,9 +241,12 @@
           <div class="pf-section">
             <h3 class="pf-title">Bank Details</h3>
             <div class="pf-grid">
-              <label class="full">Account No.<input type="text" data-field="bankAccountNo" placeholder="XXXXXXXXXXXXXXXXXX"></label>
-              <label class="full">IFSC Code<input type="text" data-field="ifscCode" placeholder="SBIN0001234" style="text-transform:uppercase"></label>
-              <label class="full">Bank Name<input type="text" data-field="bankName" placeholder="State Bank of India"></label>
+              <label class="full">Account No.<input type="text" data-field="bankAccountNo"
+                  placeholder="XXXXXXXXXXXXXXXXXX"></label>
+              <label class="full">IFSC Code<input type="text" data-field="ifscCode" placeholder="SBIN0001234"
+                  style="text-transform:uppercase"></label>
+              <label class="full">Bank Name<input type="text" data-field="bankName"
+                  placeholder="State Bank of India"></label>
             </div>
           </div>
 
@@ -264,10 +277,12 @@
           <div class="pf-section">
             <h3 class="pf-title">Professional</h3>
             <div class="pf-grid">
-              <label class="full">Skills<input type="text" data-field="skills" placeholder="JS, Python, React, Node.js"></label>
+              <label class="full">Skills<input type="text" data-field="skills"
+                  placeholder="JS, Python, React, Node.js"></label>
               <label>Total Experience<input type="text" data-field="experience" placeholder="0-1 years"></label>
               <label>Current Company<input type="text" data-field="currentCompany" placeholder="N/A or Fresher"></label>
-              <label>Current Designation<input type="text" data-field="currentDesignation" placeholder="Student / SDE"></label>
+              <label>Current Designation<input type="text" data-field="currentDesignation"
+                  placeholder="Student / SDE"></label>
               <label>Expected CTC<input type="text" data-field="expectedCTC" placeholder="5 LPA"></label>
               <label>Current CTC<input type="text" data-field="currentCTC" placeholder="N/A"></label>
               <label>Notice Period<input type="text" data-field="noticePeriod" placeholder="Immediate"></label>
@@ -282,7 +297,8 @@
                 <span class="material-icons-round" style="font-size:15px;">add</span> Add
               </button>
             </div>
-            <p style="font-size:11px;color:#888;margin:4px 0 8px;">Add each job separately. These are used by AI when filling experience forms.</p>
+            <p style="font-size:11px;color:#888;margin:4px 0 8px;">Add each job separately. These are used by AI when
+              filling experience forms.</p>
             <div id="work-exp-list">
               <!-- Dynamic work experience cards inserted here -->
             </div>
@@ -290,22 +306,32 @@
           <div class="pf-section">
             <h3 class="pf-title">Links</h3>
             <div class="pf-grid">
-              <label class="full">LinkedIn<input type="url" data-field="linkedinUrl" placeholder="https://linkedin.com/in/..."></label>
-              <label class="full">GitHub<input type="url" data-field="githubUrl" placeholder="https://github.com/..."></label>
-              <label class="full">Portfolio<input type="url" data-field="portfolioUrl" placeholder="https://yoursite.com"></label>
-              <label class="full">Resume URL<input type="url" data-field="resumeUrl" placeholder="https://drive.google.com/..."></label>
-              <label class="full">Resume PDF Path<input type="text" data-field="resumePath" placeholder="C:\path\to\resume.pdf"></label>
+              <label class="full">LinkedIn<input type="url" data-field="linkedinUrl"
+                  placeholder="https://linkedin.com/in/..."></label>
+              <label class="full">GitHub<input type="url" data-field="githubUrl"
+                  placeholder="https://github.com/..."></label>
+              <label class="full">Portfolio<input type="url" data-field="portfolioUrl"
+                  placeholder="https://yoursite.com"></label>
+              <label class="full">Resume URL<input type="url" data-field="resumeUrl"
+                  placeholder="https://drive.google.com/..."></label>
+              <label class="full">Resume PDF Path<input type="text" data-field="resumePath"
+                  placeholder="C:\path\to\resume.pdf"></label>
             </div>
           </div>
           <div class="pf-section">
             <h3 class="pf-title">Additional</h3>
             <div class="pf-grid">
-              <label class="full">Languages<input type="text" data-field="languages" placeholder="English, Hindi"></label>
-              <label class="full">Certifications<input type="text" data-field="certifications" placeholder="AWS, GCP..."></label>
-              <label class="full">About Me<textarea data-field="aboutMe" rows="3" placeholder="Brief summary..."></textarea></label>
-              <label class="full">Why Hire You?<textarea data-field="whyHire" rows="3" placeholder="Your answer..."></textarea></label>
+              <label class="full">Languages<input type="text" data-field="languages"
+                  placeholder="English, Hindi"></label>
+              <label class="full">Certifications<input type="text" data-field="certifications"
+                  placeholder="AWS, GCP..."></label>
+              <label class="full">About Me<textarea data-field="aboutMe" rows="3"
+                  placeholder="Brief summary..."></textarea></label>
+              <label class="full">Why Hire You?<textarea data-field="whyHire" rows="3"
+                  placeholder="Your answer..."></textarea></label>
               <label class="full">Cover Letter (Text)
-                <textarea data-field="coverLetterText" rows="4" placeholder="Write your cover letter here..."></textarea>
+                <textarea data-field="coverLetterText" rows="4"
+                  placeholder="Write your cover letter here..."></textarea>
               </label>
               <label class="full">Cover Letter PDF Path
                 <input type="text" data-field="coverLetterPath" placeholder="C:\path\to\coverletter.pdf">
@@ -324,18 +350,29 @@
               <!-- Dynamic Q&A rows inserted here -->
             </div>
           </div>
-          
+
         </div>
       </div>
 
       <!-- Settings Panel -->
       <div class="panel-content" id="panel-settings">
-        <div class="panel-scroll">
+
+        <div class="panel-scroll" style="margin-top: -10px; margin-bottom: 10px;">
+          <button class="btn-save-profile" id="btn-save-settings">
+            <span class="material-icons-round">save</span> Save Settings
+          </button>
           <div class="pf-section">
+
             <h3 class="pf-title">AI Configuration</h3>
             <div class="pf-grid">
-              <label class="full">Gemini API Key(s)<textarea id="set-geminiApiKey" rows="2" placeholder="AIzaSy..., AIzaSy... (comma-separated for multi-key pool)" style="font-size:11px;"></textarea></label>
-              <small class="hint">Free at <a href="#" id="link-gemini-key">aistudio.google.com</a> — Add multiple keys separated by commas for failover</small>
+              <label class="full">Gemini API Key(s)<textarea id="set-geminiApiKey" rows="2"
+                  placeholder="AIzaSy..., AIzaSy... (comma-separated for multi-key pool)"
+                  style="font-size:11px;"></textarea></label>
+              <small class="hint">Free at <a href="#" id="link-gemini-key">aistudio.google.com</a>
+                <button id="btn-copy-gemini-link" title="Copy link" style="background:none;border:none;cursor:pointer;padding:0 2px;vertical-align:middle;color:#888;font-size:13px;" onclick="navigator.clipboard.writeText('https://aistudio.google.com/app/apikey').then(()=>{this.textContent='✅';setTimeout(()=>{this.innerHTML='<span class=\'material-icons-round\' style=\'font-size:13px;vertical-align:middle;\'>content_copy</span>';},1500)})">
+                  <span class="material-icons-round" style="font-size:13px;vertical-align:middle;">content_copy</span>
+                </button>
+                — Add multiple keys separated by commas for failover</small>
             </div>
           </div>
           <div class="pf-section">
@@ -347,7 +384,8 @@
                   <option value="false">No — fill only</option>
                 </select>
               </label>
-              <label class="full">Resume Path<input type="text" id="set-resumePath" placeholder="C:\path\to\resume.pdf"></label>
+              <label class="full">Resume Path<input type="text" id="set-resumePath"
+                  placeholder="C:\path\to\resume.pdf"></label>
               <small class="hint">Used for auto-uploading resume to file upload fields</small>
             </div>
           </div>
@@ -361,13 +399,12 @@
                 <span class="material-icons-round">restart_alt</span> Reset & Clear Cache
               </button>
             </div>
-            <div id="site-data-list" style="display:none;background:#1e1e2d;border-radius:6px;padding:8px;max-height:200px;overflow-y:auto;">
+            <div id="site-data-list"
+              style="display:none;background:#1e1e2d;border-radius:6px;padding:8px;max-height:200px;overflow-y:auto;">
               <!-- Site data domains will be listed here -->
             </div>
           </div>
-          <button class="btn-save-profile" id="btn-save-settings">
-            <span class="material-icons-round">save</span> Save Settings
-          </button>
+
         </div>
       </div>
 
@@ -383,15 +420,18 @@
         <div class="panel-scroll">
           <div class="pf-section">
             <h3 class="pf-title">🔗 LinkedIn Easy Apply</h3>
-            <p style="font-size:12px;color:#999;margin:0 0 12px;">Navigate to LinkedIn Jobs search with Easy Apply filter, then start automation.</p>
+            <p style="font-size:12px;color:#999;margin:0 0 12px;">Navigate to LinkedIn Jobs search with Easy Apply
+              filter, then start automation.</p>
             <div class="pf-grid">
-              <label>Apply Limit<input type="number" id="li-apply-limit" value="5" min="1" max="200" placeholder="5"></label>
+              <label>Apply Limit<input type="number" id="li-apply-limit" value="5" min="1" max="200"
+                  placeholder="5"></label>
               <label>Delay (sec)<input type="number" id="li-delay" value="5" min="2" max="30" placeholder="5"></label>
             </div>
           </div>
           <div class="pf-section">
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn-save-profile" id="btn-li-start" style="background:linear-gradient(135deg,#0a66c2,#004182);flex:1;">
+              <button class="btn-save-profile" id="btn-li-start"
+                style="background:linear-gradient(135deg,#0a66c2,#004182);flex:1;">
                 <span class="material-icons-round">play_arrow</span> Start Easy Apply
               </button>
               <button class="btn-save-profile" id="btn-li-pause" style="background:#444;flex:0.5;display:none;">
@@ -419,7 +459,9 @@
               </div>
             </div>
             <div style="background:#1a1a2e;border-radius:8px;overflow:hidden;height:6px;">
-              <div id="li-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#0a66c2,#4caf50);transition:width 0.3s;"></div>
+              <div id="li-progress-bar"
+                style="height:100%;width:0%;background:linear-gradient(90deg,#0a66c2,#4caf50);transition:width 0.3s;">
+              </div>
             </div>
             <div style="font-size:11px;color:#aaa;margin-top:6px;" id="li-current-job">Waiting...</div>
           </div>
@@ -493,4 +535,5 @@
 
   <script src="app.js"></script>
 </body>
+
 </html>

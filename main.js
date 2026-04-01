@@ -165,7 +165,21 @@ app.on('web-contents-created', (event, contents) => {
       };
     }
 
-    // Deny all other popups — renderer opens them as in-app tabs
+    // For all other URLs (e.g. job links opening in new tab):
+    // Returning 'deny' in modern Electron swallows the event silently —
+    // the renderer's 'new-window' listener never fires. Instead, send an
+    // IPC message to the renderer to open it as an in-app tab.
+    if (url && url !== 'about:blank') {
+      console.log('🔗 Routing new-window to in-app tab via IPC:', url);
+      // Use setImmediate so the handler return value is processed first
+      setImmediate(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('open-in-new-tab', url);
+        }
+      });
+    }
+
+    // Always deny the native popup — we handle it via IPC above
     return { action: 'deny' };
   });
 

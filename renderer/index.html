@@ -57,6 +57,10 @@
     <div class="address-bar">
       <span class="material-icons-round addr-icon">search</span>
       <input type="text" id="address-input" placeholder="Search or enter URL..." spellcheck="false" autocomplete="off">
+      <button class="tool-btn addr-copy-btn" id="btn-copy-url" title="Copy current URL"
+        style="flex-shrink:0;margin-left:2px;padding:4px 6px;height:28px;min-width:28px;border-radius:6px;">
+        <span class="material-icons-round" style="font-size:16px;">content_copy</span>
+      </button>
     </div>
     <div class="toolbar-actions">
       <!-- The Magic Apply Button -->
@@ -369,7 +373,9 @@
                   placeholder="AIzaSy..., AIzaSy... (comma-separated for multi-key pool)"
                   style="font-size:11px;"></textarea></label>
               <small class="hint">Free at <a href="#" id="link-gemini-key">aistudio.google.com</a>
-                <button id="btn-copy-gemini-link" title="Copy link" style="background:none;border:none;cursor:pointer;padding:0 2px;vertical-align:middle;color:#888;font-size:13px;" onclick="navigator.clipboard.writeText('https://aistudio.google.com/app/apikey').then(()=>{this.textContent='✅';setTimeout(()=>{this.innerHTML='<span class=\'material-icons-round\' style=\'font-size:13px;vertical-align:middle;\'>content_copy</span>';},1500)})">
+                <button id="btn-copy-gemini-link" title="Copy link"
+                  style="background:none;border:none;cursor:pointer;padding:0 2px;vertical-align:middle;color:#888;font-size:13px;"
+                  onclick="navigator.clipboard.writeText('https://aistudio.google.com/app/apikey').then(()=>{this.textContent='✅';setTimeout(()=>{this.innerHTML='<span class=\'material-icons-round\' style=\'font-size:13px;vertical-align:middle;\'>content_copy</span>';},1500)})">
                   <span class="material-icons-round" style="font-size:13px;vertical-align:middle;">content_copy</span>
                 </button>
                 — Add multiple keys separated by commas for failover</small>
@@ -384,6 +390,14 @@
                   <option value="false">No — fill only</option>
                 </select>
               </label>
+              <label>Job Preference
+                <select id="set-jobPreference">
+                  <option value="all">Apply to All Jobs</option>
+                  <option value="paid">Only Paid Jobs</option>
+                </select>
+              </label>
+              <small class="hint" style="grid-column:1/-1;">When set to "Only Paid", unpaid/no-equity internships will
+                be skipped automatically</small>
               <label class="full">Resume Path<input type="text" id="set-resumePath"
                   placeholder="C:\path\to\resume.pdf"></label>
               <small class="hint">Used for auto-uploading resume to file upload fields</small>
@@ -396,7 +410,7 @@
                 <span class="material-icons-round">storage</span> Show Site Data
               </button>
               <button class="btn-save-profile" id="btn-clear-cache" style="background:#c62828;flex:1;">
-                <span class="material-icons-round">restart_alt</span> Reset & Clear Cache
+                <span class="material-icons-round"></span> Reset & Clear Cache
               </button>
             </div>
             <div id="site-data-list"

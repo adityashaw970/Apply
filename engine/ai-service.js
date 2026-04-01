@@ -426,7 +426,13 @@ class AIService {
     else if (degreeNorm.includes('diploma')) educationLevel = 'Diploma';
     else if (degreeNorm.includes('12th') || degreeNorm.includes('high school') || degreeNorm.includes('hsc') || degreeNorm.includes('intermediate')) educationLevel = 'High School';
 
-    let prompt = `You are ${fullName || 'the candidate'} applying for a job.\nYou must answer the application questions acting AS the candidate in the FIRST PERSON ("I", "my", "me").\nDO NOT talk about the candidate in the third person (e.g., do not say "Aditya has...").\n\n`;
+    // Job preference instruction for unpaid/equity questions
+    const jobPref = p.jobPreference || 'all';
+    const unpaidPrefInstruction = jobPref === 'paid'
+      ? `\n⚠️ IMPORTANT — JOB PREFERENCE: The candidate is set to "ONLY PAID JOBS". If ANY question asks about willingness to work in an unpaid position, no-equity role, volunteer work, or any form of zero/no compensation, you MUST answer "No". This is a hard rule — the candidate will NOT accept unpaid work.\n`
+      : `\n⚠️ IMPORTANT — JOB PREFERENCE: The candidate is open to "ALL JOBS" including unpaid internships. If asked whether they are willing to work in an unpaid/no-equity role, answer "Yes".\n`;
+
+    let prompt = `You are ${fullName || 'the candidate'} applying for a job.\nYou must answer the application questions acting AS the candidate in the FIRST PERSON ("I", "my", "me").\nDO NOT talk about the candidate in the third person (e.g., do not say "Aditya has...").\n${unpaidPrefInstruction}\n`;
 
     if (jobParts.length > 0) {
       prompt += `## 🎯 Job Details\n${jobParts.join('\n')}\n\n`;

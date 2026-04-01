@@ -42,6 +42,15 @@ contextBridge.exposeInMainWorld('api', {
     get: () => ipcRenderer.invoke('shortcuts:get'),
     save: (data) => ipcRenderer.invoke('shortcuts:save', data)
   },
+  on: {
+    // Called by main.js when setWindowOpenHandler intercepts a new-tab request.
+    // The renderer listens to this and opens it as an in-app tab.
+    openInNewTab: (callback) => {
+      const listener = (_, url) => callback(url);
+      ipcRenderer.on('open-in-new-tab', listener);
+      return () => ipcRenderer.removeListener('open-in-new-tab', listener);
+    }
+  },
   webview: {
     openDevTools: (webContentsId) => ipcRenderer.invoke('webview:openDevTools', webContentsId),
     inspectElement: (webContentsId, x, y) => ipcRenderer.invoke('webview:inspectElement', { webContentsId, x, y })

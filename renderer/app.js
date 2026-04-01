@@ -481,6 +481,21 @@ document.addEventListener('DOMContentLoaded', () => {
     addressInput.select();
   });
 
+  // ═══ IPC: Open URL in new tab (triggered by main.js setWindowOpenHandler) ═══
+  // When a webview fires a new-window event (e.g. clicking an arrow/external link),
+  // main.js intercepts it via setWindowOpenHandler, which in modern Electron
+  // silently swallows the event if you return { action: 'deny' }.
+  // Instead main.js sends this IPC message so we can open it as an in-app tab.
+  if (window.api && window.api.on && window.api.on.openInNewTab) {
+    window.api.on.openInNewTab((url) => {
+      if (url && url !== 'about:blank') {
+        console.log('📂 IPC open-in-new-tab:', url);
+        const newTabId = createTab(url, 'Loading...');
+        switchTab(newTabId);
+      }
+    });
+  }
+
   // ═══ NAVIGATION ═══
   addressInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -860,12 +875,27 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#btn-screenshot').addEventListener('click', () => takeScreenshotToClipboard());
   }
 
+  // ═══ COPY URL BUTTON ═══
+  const btnCopyUrl = $('#btn-copy-url');
+  if (btnCopyUrl) {
+    btnCopyUrl.addEventListener('click', () => {
+      const url = addressInput.value.trim();
+      if (!url) { toast('No URL to copy', 'warning'); return; }
+      navigator.clipboard.writeText(url).then(() => {
+        toast('🔗 URL copied!', 'success');
+        const icon = btnCopyUrl.querySelector('.material-icons-round');
+        if (icon) { icon.textContent = 'check'; setTimeout(() => { icon.textContent = 'content_copy'; }, 1500); }
+      }).catch(() => toast('Copy failed', 'error'));
+    });
+  }
+
   // ═══ SETTINGS ═══
   async function loadSettings() {
     settings = await window.api.settings.get();
     $('#set-geminiApiKey').value = settings.geminiApiKey || '';
     $('#set-autoSubmit').value = String(settings.autoSubmit !== false);
     if ($('#set-resumePath')) $('#set-resumePath').value = settings.resumePath || '';
+    if ($('#set-jobPreference')) $('#set-jobPreference').value = settings.jobPreference || 'all';
   }
 
   // Open Gemini API key page in new tab
@@ -962,7 +992,8 @@ document.addEventListener('DOMContentLoaded', () => {
       ...settings,
       geminiApiKey: $('#set-geminiApiKey').value.trim(),
       autoSubmit: $('#set-autoSubmit').value === 'true',
-      resumePath: ($('#set-resumePath')?.value || '').trim()
+      resumePath: ($('#set-resumePath')?.value || '').trim(),
+      jobPreference: $('#set-jobPreference')?.value || 'all'
     };
     await window.api.settings.save(settings);
     toast('Settings saved!', 'success');
@@ -1108,9 +1139,18 @@ document.addEventListener('DOMContentLoaded', () => {
   function navigateTo(url, title) {
     if (activeTabId) {
       const tab = tabs.find(t => t.id === activeTabId);
-      if (!tab.url || tab.url === 'about:blank' || tab.url === '') {
+      // If current tab is a blank/new tab, navigate in-place
+      const isBlank = !tab.url || tab.url === 'about:blank' || tab.url === '' || tab.url === 'about:newtab';
+      if (isBlank) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
-        if (wv) wv.src = url;
+        if (wv) {
+          // Use loadURL (imperative) instead of wv.src (declarative/async) for instant navigation
+          if (typeof wv.loadURL === 'function') {
+            wv.loadURL(url);
+          } else {
+            wv.src = url;
+          }
+        }
         tab.url = url;
         tab.title = title || url;
         addressInput.value = url;
@@ -2346,6 +2386,12 @@ document.addEventListener('DOMContentLoaded', () => {
                   return q;
                 });
 
+                // Inject job preference into the profile context so AI can answer accordingly
+                const profileWithPreference = {
+                  ...profile,
+                  jobPreference: settings.jobPreference || 'all'
+                };
+
                 try {
                   const aiAnswers = await window.api.ai.answerQuestions({
                     questions: questionsForAI,
@@ -2355,7 +2401,7 @@ document.addEventListener('DOMContentLoaded', () => {
                       company: job.company,
                       description: jobDescText
                     },
-                    userProfile: profile
+                    userProfile: profileWithPreference
                   });
 
                   console.log(`🤖 AI answers received (${(aiAnswers || []).length} total):`, JSON.stringify(aiAnswers, null, 2));
@@ -2364,7 +2410,35 @@ document.addEventListener('DOMContentLoaded', () => {
                   const validAiAnswers = (aiAnswers || []).filter(a => a && a.answer && a.answer.trim() && a.answer !== 'N/A');
                   console.log(`🤖 Valid AI answers (${validAiAnswers.length}):`, JSON.stringify(validAiAnswers, null, 2));
 
+                  // ── UNPAID JOB DETECTION ──
+                  // If user selected "Only Paid" and AI got an unpaid/no-equity question,
+                  // check if any answer signals this is an unpaid role.
+                  if ((settings.jobPreference || 'all') === 'paid') {
+                    const unpaidSignalAnswer = (aiAnswers || []).find(a => {
+                      const lbl = (a.label || '').toLowerCase();
+                      const isUnpaidQuestion = lbl.includes('unpaid') || lbl.includes('no equity') ||
+                        lbl.includes('no compensation') || lbl.includes('without pay') ||
+                        lbl.includes('no salary') || lbl.includes('volunteer') ||
+                        (lbl.includes('willing') && (lbl.includes('unpaid') || lbl.includes('equity')));
+                      return isUnpaidQuestion;
+                    });
+                    if (unpaidSignalAnswer) {
+                      // This job is explicitly unpaid — skip it
+                      log('warn', `⛔ SKIPPING unpaid job: "${job.title}" — You have set "Only Paid Jobs" preference`);
+                      toast(`⛔ Skipped unpaid job: ${job.title}`, 'warning');
+                      liSkippedCount++;
+                      liUpdateProgress();
+                      // Dismiss the modal and move to next job
+                      try { await liInject(wv, 'dismissModal'); } catch (e) {}
+                      await liDelay(1500);
+                      applicationSubmitted = false;
+                      break; // Break out of the step while-loop for this job
+                    }
+                  }
+
+                  // Log AI answers to Logs panel with copy buttons
                   if (validAiAnswers.length > 0) {
+                    logAiAnswers(validAiAnswers);
                     const aiFillResult = await liInject(wv, 'fillStep', { aiAnswers: validAiAnswers });
                     if (aiFillResult.success) {
                       const newAiFilled = aiFillResult.data.filledFields.filter(f => f.source === 'ai').length;
@@ -2603,6 +2677,58 @@ document.addEventListener('DOMContentLoaded', () => {
       $$('.left-panel .panel-content').forEach(c => c.classList.toggle('active', c.id === 'panel-logs'));
       if (!leftPanel.classList.contains('open')) leftPanel.classList.add('open');
     }
+  }
+
+  // Log AI answers as individual copyable blocks in the Logs panel
+  function logAiAnswers(answers) {
+    if (!answers || answers.length === 0) return;
+
+    const header = document.createElement('div');
+    header.className = 'log-line log-accent';
+    header.textContent = `🤖 AI Answers (${answers.length}):`;
+    logsScroll.appendChild(header);
+
+    answers.forEach(ans => {
+      const row = document.createElement('div');
+      row.className = 'log-line log-ai-answer';
+      row.style.cssText = 'display:flex;align-items:flex-start;gap:6px;background:rgba(99,102,241,0.08);border-left:3px solid #6366f1;padding:5px 8px;margin:2px 0;border-radius:0 5px 5px 0;';
+
+      const text = document.createElement('div');
+      text.style.cssText = 'flex:1;min-width:0;word-break:break-word;font-size:11.5px;line-height:1.4;';
+      text.innerHTML = `<span style="color:#a5b4fc;font-weight:600;">${escapeHtml(ans.label)}</span><br><span style="color:#e2e8f0;">${escapeHtml(ans.answer || '(no answer)')}</span>`;
+
+      const copyBtn = document.createElement('button');
+      copyBtn.title = 'Copy answer';
+      copyBtn.style.cssText = 'background:rgba(255,255,255,0.08);border:none;border-radius:4px;cursor:pointer;color:#94a3b8;padding:3px 5px;flex-shrink:0;font-size:12px;display:flex;align-items:center;';
+      copyBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">content_copy</span>';
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(`Q: ${ans.label}\nA: ${ans.answer}`).then(() => {
+          copyBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">check</span>';
+          setTimeout(() => { copyBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">content_copy</span>'; }, 1500);
+        });
+      };
+
+      row.appendChild(text);
+      row.appendChild(copyBtn);
+      logsScroll.appendChild(row);
+    });
+
+    // Also show a "Copy All" button
+    const copyAllRow = document.createElement('div');
+    copyAllRow.style.cssText = 'padding:3px 8px;margin-bottom:4px;';
+    const copyAllBtn = document.createElement('button');
+    copyAllBtn.style.cssText = 'background:rgba(99,102,241,0.2);border:1px solid #6366f1;border-radius:5px;cursor:pointer;color:#a5b4fc;padding:3px 10px;font-size:11px;display:flex;align-items:center;gap:4px;';
+    copyAllBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">copy_all</span> Copy All Answers';
+    copyAllBtn.onclick = () => {
+      const allText = answers.map(a => `Q: ${a.label}\nA: ${a.answer || '(no answer)'}`).join('\n\n');
+      navigator.clipboard.writeText(allText).then(() => {
+        copyAllBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">check</span> Copied!';
+        setTimeout(() => { copyAllBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">copy_all</span> Copy All Answers'; }, 2000);
+      });
+    };
+    copyAllRow.appendChild(copyAllBtn);
+    logsScroll.appendChild(copyAllRow);
+    logsScroll.scrollTop = logsScroll.scrollHeight;
   }
 
   function updateStats() {

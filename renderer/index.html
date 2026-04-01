@@ -63,19 +63,16 @@
       </button>
     </div>
     <div class="toolbar-actions">
-      <!-- The Magic Apply Button -->
-      <button class="apply-btn" id="btn-apply" title="Auto-fill this page">
+      <button class="apply-btn" id="btn-left-panel-toggle" title="Profile &amp; Settings">
         <span class="material-icons-round">bolt</span>
-        <span class="apply-label">Apply</span>
+        <span class="apply-label">Start</span>
       </button>
       <button class="tool-btn" id="btn-screenshot" title="Screenshot full browser to clipboard (Ctrl+Shift+S)">
         <span class="material-icons-round">screenshot</span>
       </button>
-      <button class="tool-btn" id="btn-left-panel-toggle" title="Profile &amp; Settings">
-        <span class="material-icons-round">person</span>
-      </button>
       <button class="tool-btn" id="btn-right-panel-toggle" title="History &amp; Logs">
         <span class="material-icons-round">history</span>
+
       </button>
     </div>
   </div>
@@ -96,7 +93,7 @@
           <span class="material-icons-round">terminal</span> Logs
         </button>
         <button class="panel-tab" data-panel="linkedin">
-          <span class="material-icons-round">work</span> LinkedIn
+          <span class="material-icons-round">bolt</span> Apply
         </button>
       </div>
       <!-- Profile Panel -->
@@ -431,6 +428,12 @@
 
       <!-- LinkedIn Panel -->
       <div class="panel-content" id="panel-linkedin">
+        <!-- The Magic Apply Button -->
+        <button class="btn-save-profile" id="btn-apply" title="Auto-fill this page"
+          style="margin:10px 20px 0 20px; justify-content: center; width: calc(100% - 40px);">
+          <span class="material-icons-round">bolt</span>
+          <span class="apply-label">Basic Apply</span>
+        </button>
         <div class="panel-scroll">
           <div class="pf-section">
             <h3 class="pf-title">🔗 LinkedIn Easy Apply</h3>

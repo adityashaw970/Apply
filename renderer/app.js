@@ -1474,7 +1474,12 @@ document.addEventListener('DOMContentLoaded', () => {
         log('accent', `🤖 Sending ${result.unknownFields.length} unknown questions to AI (batch)...`);
         statusText.textContent = 'AI answering all questions at once...';
 
-        // *** Send FULL profile details to AI for most accurate responses ***
+        // Pass jobPreference so AI answers unpaid questions correctly
+        const profileWithPreference = {
+          ...profile,
+          jobPreference: settings.jobPreference || 'all'
+        };
+
         const aiAnswers = await window.api.ai.answerQuestions({
           questions: result.unknownFields,
           jobContext: {
@@ -1482,7 +1487,7 @@ document.addEventListener('DOMContentLoaded', () => {
             company: result.company || '',
             description: result.jobDescription || ''
           },
-          userProfile: profile  // Full profile data sent to AI
+          userProfile: profileWithPreference
         });
 
         // Check for server connection error
@@ -1512,9 +1517,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const batchFillScript = buildBatchFillScript(validAnswers);
             await wv.executeJavaScript(batchFillScript);
             totalAI += validAnswers.length;
-            validAnswers.forEach(va => {
-              log('success', `✅ AI filled: "${va.field.label}" → "${va.answer.substring(0, 50)}"`);
-            });
+
+            // ─── Show AI answers as styled copyable blocks in Logs ───
+            logAiAnswers(validAnswers.map(va => ({
+              label: va.field.label,
+              answer: va.answer
+            })));
           } catch (err) {
             log('error', `❌ Batch fill failed: ${err.message}`);
             totalSkipped += validAnswers.length;

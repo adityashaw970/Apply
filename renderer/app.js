@@ -4,64 +4,66 @@
 // Keyboard shortcuts + History Manager
 // ══════════════════════════════════════════════════════════
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   // ─── State ───
-  let tabs = [];         // { id, title, url }
+  let tabs = []; // { id, title, url }
   let activeTabId = null;
   let profile = {};
   let settings = {};
   let shortcuts = []; // { name, url, icon }
-  let injectorScript = '';
-  let totalFilled = 0, totalAI = 0, totalSkipped = 0;
+  let injectorScript = "";
+  let totalFilled = 0,
+    totalAI = 0,
+    totalSkipped = 0;
   let browsingHistory = []; // { url, title, timestamp, favicon }
 
-  const $ = s => document.querySelector(s);
-  const $$ = s => document.querySelectorAll(s);
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => document.querySelectorAll(s);
 
   // ─── DOM ───
-  const tabsScroll = $('#tabs-scroll');
-  const webviewContainer = $('#webview-container');
-  const shortcutsPage = $('#shortcuts-page');
-  const addressInput = $('#address-input');
-  const btnApply = $('#btn-apply');
-  const statusText = $('#status-text');
-  const logsScroll = $('#logs-scroll');
+  const tabsScroll = $("#tabs-scroll");
+  const webviewContainer = $("#webview-container");
+  const shortcutsPage = $("#shortcuts-page");
+  const addressInput = $("#address-input");
+  const btnApply = $("#btn-apply");
+  const statusText = $("#status-text");
+  const logsScroll = $("#logs-scroll");
 
   // Panels
-  const leftPanel = $('#left-panel');
-  const rightPanel = $('#right-panel');
+  const leftPanel = $("#left-panel");
+  const rightPanel = $("#right-panel");
 
   // Modal DOM
-  const modalOverlay = $('#modal-add-shortcut');
-  const btnAddShortcut = $('#btn-add-shortcut');
-  const btnCancelSc = $('#btn-cancel-sc');
-  const btnSaveSc = $('#btn-save-sc');
-  const inputScName = $('#sc-name');
-  const inputScUrl = $('#sc-url');
+  const modalOverlay = $("#modal-add-shortcut");
+  const btnAddShortcut = $("#btn-add-shortcut");
+  const btnCancelSc = $("#btn-cancel-sc");
+  const btnSaveSc = $("#btn-save-sc");
+  const inputScName = $("#sc-name");
+  const inputScUrl = $("#sc-url");
 
   // ═══ WINDOW CONTROLS ═══
-  $('#btn-minimize').onclick = () => window.api.window.minimize();
-  $('#btn-maximize').onclick = () => window.api.window.maximize();
-  $('#btn-close').onclick = () => window.api.window.close();
+  $("#btn-minimize").onclick = () => window.api.window.minimize();
+  $("#btn-maximize").onclick = () => window.api.window.maximize();
+  $("#btn-close").onclick = () => window.api.window.close();
 
   // ═══ KEYBOARD SHORTCUTS ═══
-  document.addEventListener('keydown', (e) => {
+  document.addEventListener("keydown", (e) => {
     const ctrl = e.ctrlKey || e.metaKey;
 
     // Ctrl+T — New Tab
-    if (ctrl && e.key === 't') {
+    if (ctrl && e.key === "t") {
       e.preventDefault();
-      createTab('', 'New Tab');
+      createTab("", "New Tab");
       addressInput.focus();
       addressInput.select();
     }
     // Ctrl+W — Close Current Tab
-    if (ctrl && e.key === 'w') {
+    if (ctrl && e.key === "w") {
       e.preventDefault();
       if (activeTabId) closeTab(activeTabId);
     }
     // Ctrl+R or F5 — Reload
-    if ((ctrl && e.key === 'r') || e.key === 'F5') {
+    if ((ctrl && e.key === "r") || e.key === "F5") {
       e.preventDefault();
       if (activeTabId) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
@@ -69,14 +71,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     // Ctrl+L — Focus Address Bar
-    if (ctrl && e.key === 'l') {
+    if (ctrl && e.key === "l") {
       e.preventDefault();
       addressInput.focus();
       addressInput.select();
     }
     // Ctrl+Shift+T — Reopen last closed (placeholder)
     // Alt+Left — Back
-    if (e.altKey && e.key === 'ArrowLeft') {
+    if (e.altKey && e.key === "ArrowLeft") {
       e.preventDefault();
       if (activeTabId) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
@@ -84,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     // Alt+Right — Forward
-    if (e.altKey && e.key === 'ArrowRight') {
+    if (e.altKey && e.key === "ArrowRight") {
       e.preventDefault();
       if (activeTabId) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
@@ -92,39 +94,39 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     // Ctrl+1-9 — Switch to tab
-    if (ctrl && e.key >= '1' && e.key <= '9') {
+    if (ctrl && e.key >= "1" && e.key <= "9") {
       e.preventDefault();
       const idx = parseInt(e.key) - 1;
       if (idx < tabs.length) switchTab(tabs[idx].id);
     }
     // Ctrl+Tab — Next tab
-    if (ctrl && e.key === 'Tab' && !e.shiftKey) {
+    if (ctrl && e.key === "Tab" && !e.shiftKey) {
       e.preventDefault();
-      const idx = tabs.findIndex(t => t.id === activeTabId);
+      const idx = tabs.findIndex((t) => t.id === activeTabId);
       if (idx >= 0 && tabs.length > 1) {
         switchTab(tabs[(idx + 1) % tabs.length].id);
       }
     }
     // Ctrl+Shift+Tab — Previous tab
-    if (ctrl && e.key === 'Tab' && e.shiftKey) {
+    if (ctrl && e.key === "Tab" && e.shiftKey) {
       e.preventDefault();
-      const idx = tabs.findIndex(t => t.id === activeTabId);
+      const idx = tabs.findIndex((t) => t.id === activeTabId);
       if (idx >= 0 && tabs.length > 1) {
         switchTab(tabs[(idx - 1 + tabs.length) % tabs.length].id);
       }
     }
     // Ctrl+H — Toggle History panel
-    if (ctrl && e.key === 'h') {
+    if (ctrl && e.key === "h") {
       e.preventDefault();
-      rightPanel.classList.toggle('open');
+      rightPanel.classList.toggle("open");
     }
     // Ctrl+Shift+S — Screenshot to clipboard
-    if (ctrl && e.shiftKey && e.key.toLowerCase() === 's') {
+    if (ctrl && e.shiftKey && e.key.toLowerCase() === "s") {
       e.preventDefault();
       takeScreenshotToClipboard();
     }
     // Ctrl+= / Ctrl++ — Zoom In
-    if (ctrl && (e.key === '=' || e.key === '+')) {
+    if (ctrl && (e.key === "=" || e.key === "+")) {
       e.preventDefault();
       if (activeTabId) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
@@ -132,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     // Ctrl+- — Zoom Out
-    if (ctrl && e.key === '-') {
+    if (ctrl && e.key === "-") {
       e.preventDefault();
       if (activeTabId) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
@@ -140,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     // Ctrl+0 — Reset Zoom
-    if (ctrl && e.key === '0') {
+    if (ctrl && e.key === "0") {
       e.preventDefault();
       if (activeTabId) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
@@ -148,8 +150,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     // Escape — Close modals
-    if (e.key === 'Escape') {
-      modalOverlay.classList.remove('active');
+    if (e.key === "Escape") {
+      modalOverlay.classList.remove("active");
     }
   });
 
@@ -157,55 +159,58 @@ document.addEventListener('DOMContentLoaded', () => {
   let tabCounter = 0;
 
   function createTab(url, title) {
-    const id = 'tab-' + (++tabCounter);
-    url = url || '';
-    title = title || 'New Tab';
+    const id = "tab-" + ++tabCounter;
+    url = url || "";
+    title = title || "New Tab";
 
     tabs.push({ id, title, url });
 
     // Create tab button
-    const tabEl = document.createElement('div');
-    tabEl.className = 'browser-tab';
+    const tabEl = document.createElement("div");
+    tabEl.className = "browser-tab";
     tabEl.dataset.id = id;
     tabEl.innerHTML = `
       <span class="tab-title">${escapeHtml(title)}</span>
       <button class="tab-close" data-id="${id}"><span class="material-icons-round">close</span></button>
     `;
-    tabEl.addEventListener('click', (e) => {
-      if (!e.target.closest('.tab-close')) switchTab(id);
+    tabEl.addEventListener("click", (e) => {
+      if (!e.target.closest(".tab-close")) switchTab(id);
     });
-    tabEl.querySelector('.tab-close').addEventListener('click', (e) => {
+    tabEl.querySelector(".tab-close").addEventListener("click", (e) => {
       e.stopPropagation();
       closeTab(id);
     });
 
     // ── Drag-to-reorder ──
     tabEl.draggable = true;
-    tabEl.addEventListener('dragstart', (e) => {
-      tabEl.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', id);
+    tabEl.addEventListener("dragstart", (e) => {
+      tabEl.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", id);
     });
-    tabEl.addEventListener('dragend', () => {
-      tabEl.classList.remove('dragging');
-      tabsScroll.querySelectorAll('.browser-tab').forEach(t => t.classList.remove('drag-over'));
+    tabEl.addEventListener("dragend", () => {
+      tabEl.classList.remove("dragging");
+      tabsScroll
+        .querySelectorAll(".browser-tab")
+        .forEach((t) => t.classList.remove("drag-over"));
     });
-    tabEl.addEventListener('dragover', (e) => {
+    tabEl.addEventListener("dragover", (e) => {
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      if (!tabEl.classList.contains('dragging')) tabEl.classList.add('drag-over');
+      e.dataTransfer.dropEffect = "move";
+      if (!tabEl.classList.contains("dragging"))
+        tabEl.classList.add("drag-over");
     });
-    tabEl.addEventListener('dragleave', () => {
-      tabEl.classList.remove('drag-over');
+    tabEl.addEventListener("dragleave", () => {
+      tabEl.classList.remove("drag-over");
     });
-    tabEl.addEventListener('drop', (e) => {
+    tabEl.addEventListener("drop", (e) => {
       e.preventDefault();
-      tabEl.classList.remove('drag-over');
-      const draggedId = e.dataTransfer.getData('text/plain');
+      tabEl.classList.remove("drag-over");
+      const draggedId = e.dataTransfer.getData("text/plain");
       if (draggedId === id) return;
 
-      const fromIdx = tabs.findIndex(t => t.id === draggedId);
-      const toIdx = tabs.findIndex(t => t.id === id);
+      const fromIdx = tabs.findIndex((t) => t.id === draggedId);
+      const toIdx = tabs.findIndex((t) => t.id === id);
       if (fromIdx === -1 || toIdx === -1) return;
 
       // Reorder tabs array
@@ -226,41 +231,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     tabsScroll.appendChild(tabEl);
     // Create webview
-    const wv = document.createElement('webview');
+    const wv = document.createElement("webview");
     wv.id = id;
-    wv.setAttribute('src', url || 'about:blank');
-    wv.setAttribute('allowpopups', '');
-    wv.setAttribute('webpreferences', 'nativeWindowOpen=no');
-    wv.setAttribute('partition', 'persist:massapply');
+    wv.setAttribute("src", url || "about:blank");
+    wv.setAttribute("allowpopups", "");
+    wv.setAttribute("webpreferences", "nativeWindowOpen=no");
+    wv.setAttribute("partition", "persist:massapply");
     // Use Chrome/134 UA to match the session-level UA set in main.js (CLEAN_UA)
     // All tabs share the same partition so Google sign-in cookies apply everywhere.
-    wv.setAttribute('useragent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36');
-    wv.style.width = '100%';
-    wv.style.height = '100%';
+    wv.setAttribute(
+      "useragent",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+    );
+    wv.style.width = "100%";
+    wv.style.height = "100%";
 
     // *** CRITICAL: Attach new-window handler BEFORE appending to DOM ***
-    wv.addEventListener('new-window', (e) => {
-      const newUrl = e.url || '';
-      if (!newUrl || newUrl === 'about:blank') return;
+    wv.addEventListener("new-window", (e) => {
+      const newUrl = e.url || "";
+      if (!newUrl || newUrl === "about:blank") return;
 
       // Let OAuth / Sign-In URLs open as real popup windows (handled by main.js setWindowOpenHandler).
       // Google's GSI "Continue with" button MUST open in a real popup — webview tab breaks the auth flow.
-      const isAuthUrl = newUrl.includes('accounts.google.com') ||
-        newUrl.includes('/oauth') ||
-        newUrl.includes('/signin') ||
-        newUrl.includes('appleid.apple.com') ||
-        newUrl.includes('login.microsoftonline.com');
+      const isAuthUrl =
+        newUrl.includes("accounts.google.com") ||
+        newUrl.includes("/oauth") ||
+        newUrl.includes("/signin") ||
+        newUrl.includes("appleid.apple.com") ||
+        newUrl.includes("login.microsoftonline.com");
 
       if (isAuthUrl) {
-        console.log('🔐 new-window → OAuth URL, letting main.js handle as popup:', newUrl);
+        console.log(
+          "🔐 new-window → OAuth URL, letting main.js handle as popup:",
+          newUrl,
+        );
         // Do NOT preventDefault — this lets setWindowOpenHandler in main.js open it as a real popup
         return;
       }
 
       // All other new-window requests: open as in-app tab
       e.preventDefault();
-      console.log('🔗 new-window → opening inside app tab:', newUrl);
-      const newTabId = createTab(newUrl, 'Loading...');
+      console.log("🔗 new-window → opening inside app tab:", newUrl);
+      const newTabId = createTab(newUrl, "Loading...");
       switchTab(newTabId);
     });
 
@@ -269,31 +281,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Standard webview events
 
-    wv.addEventListener('did-stop-loading', () => {
+    wv.addEventListener("did-stop-loading", () => {
       updateTabLoading(id, false);
     });
 
-    wv.addEventListener('page-title-updated', (e) => {
+    wv.addEventListener("page-title-updated", (e) => {
       updateTabTitle(id, e.title);
     });
 
-    wv.addEventListener('did-navigate', (e) => {
-      const tab = tabs.find(t => t.id === id);
+    wv.addEventListener("did-navigate", (e) => {
+      const tab = tabs.find((t) => t.id === id);
       if (tab) tab.url = e.url;
       if (activeTabId === id) addressInput.value = e.url;
-      addToHistory(e.url, tab?.title || '');
+      addToHistory(e.url, tab?.title || "");
     });
 
-    wv.addEventListener('did-navigate-in-page', (e) => {
+    wv.addEventListener("did-navigate-in-page", (e) => {
       if (e.isMainFrame) {
-        const tab = tabs.find(t => t.id === id);
+        const tab = tabs.find((t) => t.id === id);
         if (tab) tab.url = e.url;
         if (activeTabId === id) addressInput.value = e.url;
       }
     });
 
     // Run stealth scripts as early as possible
-    wv.addEventListener('did-start-loading', () => {
+    wv.addEventListener("did-start-loading", () => {
       updateTabLoading(id, true);
       wv.executeJavaScript(`
     try {
@@ -306,8 +318,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Inject window.open interceptor + context menu after DOM is ready
-    wv.addEventListener('dom-ready', () => {
-      wv.executeJavaScript(`
+    wv.addEventListener("dom-ready", () => {
+      wv.executeJavaScript(
+        `
     (function() {
       // Intercept window.open calls
       const originalOpen = window.open;
@@ -380,32 +393,35 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('__CTX_MENU__' + JSON.stringify(data));
       });
     })();
-  `).catch(err => console.log('Could not inject interceptor:', err));
+  `,
+      ).catch((err) => console.log("Could not inject interceptor:", err));
     });
 
     // Suppress certificate error spam + handle context menu messages
-    wv.addEventListener('console-message', (e) => {
-      if (e.message.includes('CertVerifyProcBuiltin') ||
-        e.message.includes('pfSense') ||
-        e.message.includes('pfBNG-DNSBL') ||
-        e.message.includes('ERROR: No matching issuer')) {
+    wv.addEventListener("console-message", (e) => {
+      if (
+        e.message.includes("CertVerifyProcBuiltin") ||
+        e.message.includes("pfSense") ||
+        e.message.includes("pfBNG-DNSBL") ||
+        e.message.includes("ERROR: No matching issuer")
+      ) {
         return;
       }
       // Handle context menu data from injected script
-      if (e.message.startsWith('__CTX_MENU__')) {
+      if (e.message.startsWith("__CTX_MENU__")) {
         try {
-          const data = JSON.parse(e.message.replace('__CTX_MENU__', ''));
+          const data = JSON.parse(e.message.replace("__CTX_MENU__", ""));
           showContextMenu(data, wv, id);
         } catch (err) {
-          console.log('Context menu parse error:', err);
+          console.log("Context menu parse error:", err);
         }
       }
     });
 
     // Handle downloads
-    wv.addEventListener('will-download', (e, item) => {
-      console.log('📥 Download started:', item.getFilename?.() || 'file');
-      toast('📥 Downloading file', 'info');
+    wv.addEventListener("will-download", (e, item) => {
+      console.log("📥 Download started:", item.getFilename?.() || "file");
+      toast("📥 Downloading file", "info");
     });
 
     switchTab(id);
@@ -415,28 +431,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function switchTab(id) {
     activeTabId = id;
-    const tab = tabs.find(t => t.id === id);
+    const tab = tabs.find((t) => t.id === id);
 
     // Update tab bar
-    $$('.browser-tab').forEach(t => t.classList.toggle('active', t.dataset.id === id));
+    $$(".browser-tab").forEach((t) =>
+      t.classList.toggle("active", t.dataset.id === id),
+    );
 
     // Update webviews
-    webviewContainer.querySelectorAll('webview').forEach(wv => {
-      wv.classList.toggle('active', wv.id === id);
+    webviewContainer.querySelectorAll("webview").forEach((wv) => {
+      wv.classList.toggle("active", wv.id === id);
     });
 
     // Show/hide shortcuts
-    const isNewTab = !tab || !tab.url || tab.url === 'about:blank' || tab.url === '';
-    shortcutsPage.classList.toggle('active', isNewTab);
+    const isNewTab =
+      !tab || !tab.url || tab.url === "about:blank" || tab.url === "";
+    shortcutsPage.classList.toggle("active", isNewTab);
 
     // Update address bar
     if (tab) {
-      addressInput.value = tab.url || '';
+      addressInput.value = tab.url || "";
     }
   }
 
   function closeTab(id) {
-    const idx = tabs.findIndex(t => t.id === id);
+    const idx = tabs.findIndex((t) => t.id === id);
     if (idx === -1) return;
 
     tabs.splice(idx, 1);
@@ -455,14 +474,14 @@ document.addEventListener('DOMContentLoaded', () => {
       switchTab(newActive.id);
     } else {
       activeTabId = null;
-      addressInput.value = '';
-      shortcutsPage.classList.add('active'); // Show shortcuts if no tabs
+      addressInput.value = "";
+      shortcutsPage.classList.add("active"); // Show shortcuts if no tabs
     }
     saveTabs();
   }
 
   function updateTabTitle(id, title) {
-    const tab = tabs.find(t => t.id === id);
+    const tab = tabs.find((t) => t.id === id);
     if (tab) tab.title = title;
     const tabEl = tabsScroll.querySelector(`[data-id="${id}"] .tab-title`);
     if (tabEl) tabEl.textContent = title;
@@ -470,13 +489,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateTabLoading(id, loading) {
     if (activeTabId === id) {
-      statusText.textContent = loading ? 'Loading...' : 'Ready';
+      statusText.textContent = loading ? "Loading..." : "Ready";
     }
   }
 
   // New tab button
-  $('#btn-new-tab').addEventListener('click', () => {
-    createTab('', 'New Tab');
+  $("#btn-new-tab").addEventListener("click", () => {
+    createTab("", "New Tab");
     addressInput.focus();
     addressInput.select();
   });
@@ -488,26 +507,26 @@ document.addEventListener('DOMContentLoaded', () => {
   // Instead main.js sends this IPC message so we can open it as an in-app tab.
   if (window.api && window.api.on && window.api.on.openInNewTab) {
     window.api.on.openInNewTab((url) => {
-      if (url && url !== 'about:blank') {
-        console.log('📂 IPC open-in-new-tab:', url);
-        const newTabId = createTab(url, 'Loading...');
+      if (url && url !== "about:blank") {
+        console.log("📂 IPC open-in-new-tab:", url);
+        const newTabId = createTab(url, "Loading...");
         switchTab(newTabId);
       }
     });
   }
 
   // ═══ NAVIGATION ═══
-  addressInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+  addressInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
       let url = addressInput.value.trim();
       if (!url) return;
 
       // Auto-add https
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        if (url.includes('.') && !url.includes(' ')) {
-          url = 'https://' + url;
+      if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        if (url.includes(".") && !url.includes(" ")) {
+          url = "https://" + url;
         } else {
-          url = 'https://www.google.com/search?q=' + encodeURIComponent(url);
+          url = "https://www.google.com/search?q=" + encodeURIComponent(url);
         }
       }
 
@@ -518,59 +537,61 @@ document.addEventListener('DOMContentLoaded', () => {
           // wv.src = url is declarative — Electron processes it asynchronously
           // through the attribute-change cycle, causing the visible lag.
           wv.loadURL(url);
-          const tab = tabs.find(t => t.id === activeTabId);
+          const tab = tabs.find((t) => t.id === activeTabId);
           if (tab) tab.url = url;
           saveTabs();
         }
       } else {
-        createTab(url, 'Loading...');
+        createTab(url, "Loading...");
       }
 
       addressInput.value = url;
     }
   });
 
-  $('#btn-back').addEventListener('click', () => {
+  $("#btn-back").addEventListener("click", () => {
     if (!activeTabId) return;
     const wv = webviewContainer.querySelector(`#${activeTabId}`);
     if (wv && wv.canGoBack()) wv.goBack();
   });
 
-  $('#btn-forward').addEventListener('click', () => {
+  $("#btn-forward").addEventListener("click", () => {
     if (!activeTabId) return;
     const wv = webviewContainer.querySelector(`#${activeTabId}`);
     if (wv && wv.canGoForward()) wv.goForward();
   });
 
-  $('#btn-reload').addEventListener('click', () => {
+  $("#btn-reload").addEventListener("click", () => {
     if (!activeTabId) return;
     const wv = webviewContainer.querySelector(`#${activeTabId}`);
     if (wv) wv.reload();
   });
 
   // ═══ LEFT PANEL (Profile/Settings/Logs) ═══
-  $('#btn-left-panel-toggle').addEventListener('click', () => {
-    leftPanel.classList.toggle('open');
+  $("#btn-left-panel-toggle").addEventListener("click", () => {
+    leftPanel.classList.toggle("open");
   });
 
   // Panel tabs (left)
-  $$('.left-panel .panel-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      $$('.left-panel .panel-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      $$('.left-panel .panel-content').forEach(c => c.classList.remove('active'));
-      $(`#panel-${btn.dataset.panel}`).classList.add('active');
+  $$(".left-panel .panel-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      $$(".left-panel .panel-tab").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      $$(".left-panel .panel-content").forEach((c) =>
+        c.classList.remove("active"),
+      );
+      $(`#panel-${btn.dataset.panel}`).classList.add("active");
     });
   });
 
   // ═══ RIGHT PANEL (History) ═══
-  $('#btn-right-panel-toggle').addEventListener('click', () => {
-    rightPanel.classList.toggle('open');
+  $("#btn-right-panel-toggle").addEventListener("click", () => {
+    rightPanel.classList.toggle("open");
   });
 
   // ═══ BROWSING HISTORY ═══
   function addToHistory(url, title) {
-    if (!url || url === 'about:blank' || url === '') return;
+    if (!url || url === "about:blank" || url === "") return;
     // De-duplicate: don't add if last entry is same URL
     if (browsingHistory.length > 0 && browsingHistory[0].url === url) return;
 
@@ -578,7 +599,7 @@ document.addEventListener('DOMContentLoaded', () => {
       url,
       title: title || url,
       timestamp: Date.now(),
-      favicon: getFaviconUrl(url)
+      favicon: getFaviconUrl(url),
     });
 
     // Cap at 500 entries
@@ -587,43 +608,55 @@ document.addEventListener('DOMContentLoaded', () => {
     renderHistory();
   }
 
-  function renderHistory(filter = '') {
-    const scroll = $('#history-scroll');
-    scroll.innerHTML = '';
+  function renderHistory(filter = "") {
+    const scroll = $("#history-scroll");
+    scroll.innerHTML = "";
 
     const filtered = filter
-      ? browsingHistory.filter(h =>
-        h.title.toLowerCase().includes(filter.toLowerCase()) ||
-        h.url.toLowerCase().includes(filter.toLowerCase()))
+      ? browsingHistory.filter(
+          (h) =>
+            h.title.toLowerCase().includes(filter.toLowerCase()) ||
+            h.url.toLowerCase().includes(filter.toLowerCase()),
+        )
       : browsingHistory;
 
     if (filtered.length === 0) {
-      scroll.innerHTML = '<div class="history-empty">No browsing history yet</div>';
+      scroll.innerHTML =
+        '<div class="history-empty">No browsing history yet</div>';
       return;
     }
 
     // Group by date
     const groups = {};
-    filtered.forEach(h => {
+    filtered.forEach((h) => {
       const date = new Date(h.timestamp);
-      const key = isToday(date) ? 'Today'
-        : isYesterday(date) ? 'Yesterday'
-          : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const key = isToday(date)
+        ? "Today"
+        : isYesterday(date)
+          ? "Yesterday"
+          : date.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            });
       if (!groups[key]) groups[key] = [];
       groups[key].push(h);
     });
 
     for (const [date, items] of Object.entries(groups)) {
-      const dateEl = document.createElement('div');
-      dateEl.className = 'history-date-group';
+      const dateEl = document.createElement("div");
+      dateEl.className = "history-date-group";
       dateEl.textContent = date;
       scroll.appendChild(dateEl);
 
       items.forEach((h, idx) => {
-        const el = document.createElement('div');
-        el.className = 'history-item';
+        const el = document.createElement("div");
+        el.className = "history-item";
         const time = new Date(h.timestamp);
-        const timeStr = time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const timeStr = time.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
 
         el.innerHTML = `
           <div class="history-item-icon">
@@ -638,18 +671,23 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         // Click to navigate
-        el.addEventListener('click', (e) => {
-          if (e.target.closest('.history-item-delete')) return;
+        el.addEventListener("click", (e) => {
+          if (e.target.closest(".history-item-delete")) return;
           navigateTo(h.url, h.title);
         });
 
         // Delete single entry
-        el.querySelector('.history-item-delete').addEventListener('click', (e) => {
-          e.stopPropagation();
-          const realIdx = browsingHistory.findIndex(bh => bh.url === h.url && bh.timestamp === h.timestamp);
-          if (realIdx >= 0) browsingHistory.splice(realIdx, 1);
-          renderHistory(filter);
-        });
+        el.querySelector(".history-item-delete").addEventListener(
+          "click",
+          (e) => {
+            e.stopPropagation();
+            const realIdx = browsingHistory.findIndex(
+              (bh) => bh.url === h.url && bh.timestamp === h.timestamp,
+            );
+            if (realIdx >= 0) browsingHistory.splice(realIdx, 1);
+            renderHistory(filter);
+          },
+        );
 
         scroll.appendChild(el);
       });
@@ -658,30 +696,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function isToday(date) {
     const now = new Date();
-    return date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+    return (
+      date.getDate() === now.getDate() &&
+      date.getMonth() === now.getMonth() &&
+      date.getFullYear() === now.getFullYear()
+    );
   }
   function isYesterday(date) {
-    const y = new Date(); y.setDate(y.getDate() - 1);
-    return date.getDate() === y.getDate() && date.getMonth() === y.getMonth() && date.getFullYear() === y.getFullYear();
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    return (
+      date.getDate() === y.getDate() &&
+      date.getMonth() === y.getMonth() &&
+      date.getFullYear() === y.getFullYear()
+    );
   }
 
   // History search
-  $('#history-search').addEventListener('input', (e) => {
+  $("#history-search").addEventListener("input", (e) => {
     renderHistory(e.target.value);
   });
 
   // Clear all history
-  $('#btn-clear-history').addEventListener('click', () => {
+  $("#btn-clear-history").addEventListener("click", () => {
     browsingHistory = [];
     renderHistory();
-    toast('History cleared', 'success');
+    toast("History cleared", "success");
   });
 
   // ═══ PROFILE ═══
   async function loadProfile() {
     profile = await window.api.profile.get();
-    $$('#panel-profile [data-field]').forEach(f => {
-      if (profile[f.dataset.field] !== undefined && profile[f.dataset.field] !== null) {
+    $$("#panel-profile [data-field]").forEach((f) => {
+      if (
+        profile[f.dataset.field] !== undefined &&
+        profile[f.dataset.field] !== null
+      ) {
         f.value = profile[f.dataset.field];
       }
     });
@@ -693,48 +743,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function collectProfile() {
     const data = {};
-    $$('#panel-profile [data-field]').forEach(f => {
+    $$("#panel-profile [data-field]").forEach((f) => {
       data[f.dataset.field] = f.value;
     });
     // Collect custom Q&A pairs
-    const qaRows = $$('#qa-list .qa-row');
+    const qaRows = $$("#qa-list .qa-row");
     data.customQA = [];
-    qaRows.forEach(row => {
-      const q = row.querySelector('.qa-question')?.value?.trim();
-      const a = row.querySelector('.qa-answer')?.value?.trim();
-      if (q) data.customQA.push({ question: q, answer: a || '' });
+    qaRows.forEach((row) => {
+      const q = row.querySelector(".qa-question")?.value?.trim();
+      const a = row.querySelector(".qa-answer")?.value?.trim();
+      if (q) data.customQA.push({ question: q, answer: a || "" });
     });
     // Collect work experiences
-    const weCards = $$('#work-exp-list .work-exp-card');
+    const weCards = $$("#work-exp-list .work-exp-card");
     data.workExperiences = [];
-    weCards.forEach(card => {
+    weCards.forEach((card) => {
       const we = {};
-      card.querySelectorAll('[data-we]').forEach(f => {
-        if (f.type === 'checkbox') {
-          we[f.dataset.we] = f.checked ? 'true' : 'false';
+      card.querySelectorAll("[data-we]").forEach((f) => {
+        if (f.type === "checkbox") {
+          we[f.dataset.we] = f.checked ? "true" : "false";
         } else {
           we[f.dataset.we] = f.value;
         }
       });
-      if (we.company || we.designationLeaving || we.designationJoining) data.workExperiences.push(we);
+      if (we.company || we.designationLeaving || we.designationJoining)
+        data.workExperiences.push(we);
     });
     return data;
   }
 
-
   // ═══ CUSTOM Q&A MANAGEMENT ═══
   function renderQA(qaList) {
-    const container = $('#qa-list');
+    const container = $("#qa-list");
     if (!container) return;
-    container.innerHTML = '';
+    container.innerHTML = "";
     (qaList || []).forEach((item) => addQARow(item.question, item.answer));
   }
 
-  function addQARow(question = '', answer = '') {
-    const container = $('#qa-list');
+  function addQARow(question = "", answer = "") {
+    const container = $("#qa-list");
     if (!container) return;
-    const row = document.createElement('div');
-    row.className = 'qa-row';
+    const row = document.createElement("div");
+    row.className = "qa-row";
     row.innerHTML = `
       <input type="text" class="qa-question" placeholder="Question (e.g., Years of Python exp)" value="${escapeHtml(question)}" style="min-width: 0;">
       <input type="text" class="qa-answer" placeholder="Answer (e.g., 3)" value="${escapeHtml(answer)}" style="min-width: 0;">
@@ -742,36 +792,50 @@ document.addEventListener('DOMContentLoaded', () => {
         <button class="qa-icon-btn del-btn" title="Delete row"><span class="material-icons-round">delete_outline</span></button>
       </div>
     `;
-    row.querySelector('.del-btn').addEventListener('click', () => {
-      row.style.opacity = '0'; row.style.transform = 'translateX(10px)';
-      row.style.transition = 'all 0.2s';
+    row.querySelector(".del-btn").addEventListener("click", () => {
+      row.style.opacity = "0";
+      row.style.transform = "translateX(10px)";
+      row.style.transition = "all 0.2s";
       setTimeout(() => row.remove(), 200);
     });
     container.appendChild(row);
   }
 
-  $('#btn-add-qa').addEventListener('click', () => addQARow());
+  $("#btn-add-qa").addEventListener("click", () => addQARow());
 
   // ═══ WORK EXPERIENCE MULTI-ENTRY ═══
   function renderWorkExperiences(list) {
-    const container = $('#work-exp-list');
+    const container = $("#work-exp-list");
     if (!container) return;
-    container.innerHTML = '';
-    (list || []).forEach(we => addWorkExpCard(we));
+    container.innerHTML = "";
+    (list || []).forEach((we) => addWorkExpCard(we));
   }
 
   function addWorkExpCard(data = {}) {
-    const container = $('#work-exp-list');
+    const container = $("#work-exp-list");
     if (!container) return;
-    const card = document.createElement('div');
-    card.className = 'work-exp-card';
-    const idx = container.querySelectorAll('.work-exp-card').length + 1;
-    const currentlyChecked = data.currentlyWorking === 'true' || data.currentlyWorking === true ? 'checked' : '';
+    const card = document.createElement("div");
+    card.className = "work-exp-card";
+    const idx = container.querySelectorAll(".work-exp-card").length + 1;
+    const currentlyChecked =
+      data.currentlyWorking === "true" || data.currentlyWorking === true
+        ? "checked"
+        : "";
 
-    const empTypes = ['Full Time', 'Part Time', 'Internship', 'Contract', 'Freelance', 'Apprenticeship'];
-    const empTypeOptions = empTypes.map(t =>
-      `<option value="${t}"${data.empType === t ? ' selected' : ''}>${t}</option>`
-    ).join('');
+    const empTypes = [
+      "Full Time",
+      "Part Time",
+      "Internship",
+      "Contract",
+      "Freelance",
+      "Apprenticeship",
+    ];
+    const empTypeOptions = empTypes
+      .map(
+        (t) =>
+          `<option value="${t}"${data.empType === t ? " selected" : ""}>${t}</option>`,
+      )
+      .join("");
 
     card.innerHTML = `
       <div class="work-exp-card-header">
@@ -781,156 +845,179 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>
       <div class="work-exp-grid">
-        <label class="full">Company Name<input type="text" data-we="company" placeholder="Infosys / TCS" value="${escapeHtml(data.company || '')}"></label>
-        <label>Designation on Joining<input type="text" data-we="designationJoining" placeholder="Junior Developer" value="${escapeHtml(data.designationJoining || '')}"></label>
-        <label>Designation on Leaving<input type="text" data-we="designationLeaving" placeholder="Senior Developer" value="${escapeHtml(data.designationLeaving || data.designation || '')}"></label>
-        <label>Country<input type="text" data-we="workCountry" placeholder="India" value="${escapeHtml(data.workCountry || '')}"></label>
-        <label>State<input type="text" data-we="workState" placeholder="Maharashtra" value="${escapeHtml(data.workState || '')}"></label>
-        <label>City<input type="text" data-we="workCity" placeholder="Mumbai" value="${escapeHtml(data.workCity || '')}"></label>
-        <label>Sector / Industry<input type="text" data-we="sector" placeholder="IT / Software" value="${escapeHtml(data.sector || '')}"></label>
+        <label class="full">Company Name<input type="text" data-we="company" placeholder="Infosys / TCS" value="${escapeHtml(data.company || "")}"></label>
+        <label>Designation on Joining<input type="text" data-we="designationJoining" placeholder="Junior Developer" value="${escapeHtml(data.designationJoining || "")}"></label>
+        <label>Designation on Leaving<input type="text" data-we="designationLeaving" placeholder="Senior Developer" value="${escapeHtml(data.designationLeaving || data.designation || "")}"></label>
+        <label>Country<input type="text" data-we="workCountry" placeholder="India" value="${escapeHtml(data.workCountry || "")}"></label>
+        <label>State<input type="text" data-we="workState" placeholder="Maharashtra" value="${escapeHtml(data.workState || "")}"></label>
+        <label>City<input type="text" data-we="workCity" placeholder="Mumbai" value="${escapeHtml(data.workCity || "")}"></label>
+        <label>Sector / Industry<input type="text" data-we="sector" placeholder="IT / Software" value="${escapeHtml(data.sector || "")}"></label>
         <label>Work Experience Type<select data-we="empType">
           <option value="">Select...</option>${empTypeOptions}
         </select></label>
-        <label>Start Date<input type="text" data-we="startDate" placeholder="Jan 2023 / 2023-01" value="${escapeHtml(data.startDate || '')}"></label>
+        <label>Start Date<input type="text" data-we="startDate" placeholder="Jan 2023 / 2023-01" value="${escapeHtml(data.startDate || "")}"></label>
         <label>End Date
           <span style="display:flex;gap:6px;align-items:center;">
-            <input type="text" data-we="endDate" placeholder="Dec 2024" value="${escapeHtml(data.endDate || '')}" style="flex:1;">
+            <input type="text" data-we="endDate" placeholder="Dec 2024" value="${escapeHtml(data.endDate || "")}" style="flex:1;">
             <label style="display:flex;align-items:center;gap:3px;font-size:9px;white-space:nowrap;text-transform:none;letter-spacing:0;">
               <input type="checkbox" data-we="currentlyWorking" ${currentlyChecked} style="width:12px;height:12px;accent-color:var(--accent);"> Currently&nbsp;Working
             </label>
           </span>
         </label>
-        <label>Annual Compensation<input type="text" data-we="compensation" placeholder="6 LPA / 500000" value="${escapeHtml(data.compensation || '')}"></label>
-        <label>Number of Months<input type="number" data-we="numMonths" placeholder="12" min="0" value="${escapeHtml(data.numMonths || '')}"></label>
-        <label class="full">Key Responsibilities<textarea data-we="description" rows="2" placeholder="Key responsibilities, achievements, technologies used...">${escapeHtml(data.description || '')}</textarea></label>
+        <label>Annual Compensation<input type="text" data-we="compensation" placeholder="6 LPA / 500000" value="${escapeHtml(data.compensation || "")}"></label>
+        <label>Number of Months<input type="number" data-we="numMonths" placeholder="12" min="0" value="${escapeHtml(data.numMonths || "")}"></label>
+        <label class="full">Key Responsibilities<textarea data-we="description" rows="2" placeholder="Key responsibilities, achievements, technologies used...">${escapeHtml(data.description || "")}</textarea></label>
       </div>
     `;
 
     // Toggle end-date field when 'currently working' is checked
     const cbCurrent = card.querySelector('[data-we="currentlyWorking"]');
     const endDateInput = card.querySelector('[data-we="endDate"]');
-    cbCurrent.addEventListener('change', () => {
+    cbCurrent.addEventListener("change", () => {
       endDateInput.disabled = cbCurrent.checked;
-      endDateInput.placeholder = cbCurrent.checked ? 'Present' : 'Dec 2024';
-      if (cbCurrent.checked) endDateInput.value = '';
+      endDateInput.placeholder = cbCurrent.checked ? "Present" : "Dec 2024";
+      if (cbCurrent.checked) endDateInput.value = "";
     });
     if (cbCurrent.checked) {
       endDateInput.disabled = true;
-      endDateInput.placeholder = 'Present';
+      endDateInput.placeholder = "Present";
     }
 
-    card.querySelector('.del-btn').addEventListener('click', () => {
-      card.style.opacity = '0';
-      card.style.transition = 'all 0.2s';
-      setTimeout(() => { card.remove(); renumberWorkExpCards(); }, 200);
+    card.querySelector(".del-btn").addEventListener("click", () => {
+      card.style.opacity = "0";
+      card.style.transition = "all 0.2s";
+      setTimeout(() => {
+        card.remove();
+        renumberWorkExpCards();
+      }, 200);
     });
     container.appendChild(card);
   }
 
   function renumberWorkExpCards() {
-    $$('#work-exp-list .work-exp-card-title').forEach((t, i) => {
+    $$("#work-exp-list .work-exp-card-title").forEach((t, i) => {
       t.textContent = `Experience #${i + 1}`;
     });
   }
 
-  if ($('#btn-add-work-exp')) {
-    $('#btn-add-work-exp').addEventListener('click', () => addWorkExpCard());
+  if ($("#btn-add-work-exp")) {
+    $("#btn-add-work-exp").addEventListener("click", () => addWorkExpCard());
   }
 
-  $('#btn-save-profile').addEventListener('click', async () => {
+  $("#btn-save-profile").addEventListener("click", async () => {
     profile = collectProfile();
     await window.api.profile.save(profile);
-    toast('Profile saved!', 'success');
+    toast("Profile saved!", "success");
   });
 
   // ═══ SCREENSHOT TO CLIPBOARD ═══
   async function takeScreenshotToClipboard() {
-    const btn = $('#btn-screenshot');
-    if (btn) { btn.classList.add('screenshot-flash'); setTimeout(() => btn.classList.remove('screenshot-flash'), 400); }
+    const btn = $("#btn-screenshot");
+    if (btn) {
+      btn.classList.add("screenshot-flash");
+      setTimeout(() => btn.classList.remove("screenshot-flash"), 400);
+    }
     try {
-      statusText.textContent = 'Taking screenshot...';
+      statusText.textContent = "Taking screenshot...";
       // Use Electron's capturePage to capture the entire window
       const dataUrl = await window.api.window.screenshot();
       if (!dataUrl) {
-        toast('Screenshot failed — API unavailable', 'error');
-        statusText.textContent = 'Ready';
+        toast("Screenshot failed — API unavailable", "error");
+        statusText.textContent = "Ready";
         return;
       }
       // Convert data URL to blob and copy to clipboard
       const res = await fetch(dataUrl);
       const blob = await res.blob();
-      const item = new ClipboardItem({ 'image/png': blob });
+      const item = new ClipboardItem({ "image/png": blob });
       await navigator.clipboard.write([item]);
-      toast('📸 Screenshot copied to clipboard!', 'success');
-      statusText.textContent = 'Screenshot copied!';
-      setTimeout(() => statusText.textContent = 'Ready', 2000);
+      toast("📸 Screenshot copied to clipboard!", "success");
+      statusText.textContent = "Screenshot copied!";
+      setTimeout(() => (statusText.textContent = "Ready"), 2000);
     } catch (err) {
-      console.error('Screenshot error:', err);
-      toast('Screenshot failed: ' + err.message, 'error');
-      statusText.textContent = 'Ready';
+      console.error("Screenshot error:", err);
+      toast("Screenshot failed: " + err.message, "error");
+      statusText.textContent = "Ready";
     }
   }
 
-  if ($('#btn-screenshot')) {
-    $('#btn-screenshot').addEventListener('click', () => takeScreenshotToClipboard());
+  if ($("#btn-screenshot")) {
+    $("#btn-screenshot").addEventListener("click", () =>
+      takeScreenshotToClipboard(),
+    );
   }
 
   // ═══ COPY URL BUTTON ═══
-  const btnCopyUrl = $('#btn-copy-url');
+  const btnCopyUrl = $("#btn-copy-url");
   if (btnCopyUrl) {
-    btnCopyUrl.addEventListener('click', () => {
+    btnCopyUrl.addEventListener("click", () => {
       const url = addressInput.value.trim();
-      if (!url) { toast('No URL to copy', 'warning'); return; }
-      navigator.clipboard.writeText(url).then(() => {
-        toast('🔗 URL copied!', 'success');
-        const icon = btnCopyUrl.querySelector('.material-icons-round');
-        if (icon) { icon.textContent = 'check'; setTimeout(() => { icon.textContent = 'content_copy'; }, 1500); }
-      }).catch(() => toast('Copy failed', 'error'));
+      if (!url) {
+        toast("No URL to copy", "warning");
+        return;
+      }
+      navigator.clipboard
+        .writeText(url)
+        .then(() => {
+          toast("🔗 URL copied!", "success");
+          const icon = btnCopyUrl.querySelector(".material-icons-round");
+          if (icon) {
+            icon.textContent = "check";
+            setTimeout(() => {
+              icon.textContent = "content_copy";
+            }, 1500);
+          }
+        })
+        .catch(() => toast("Copy failed", "error"));
     });
   }
 
   // ═══ SETTINGS ═══
   async function loadSettings() {
     settings = await window.api.settings.get();
-    $('#set-geminiApiKey').value = settings.geminiApiKey || '';
-    $('#set-autoSubmit').value = String(settings.autoSubmit !== false);
-    if ($('#set-resumePath')) $('#set-resumePath').value = settings.resumePath || '';
-    if ($('#set-jobPreference')) $('#set-jobPreference').value = settings.jobPreference || 'all';
+    $("#set-geminiApiKey").value = settings.geminiApiKey || "";
+    $("#set-autoSubmit").value = String(settings.autoSubmit !== false);
+    if ($("#set-resumePath"))
+      $("#set-resumePath").value = settings.resumePath || "";
+    if ($("#set-jobPreference"))
+      $("#set-jobPreference").value = settings.jobPreference || "all";
   }
 
   // Open Gemini API key page in new tab
-  const linkGeminiKey = document.getElementById('link-gemini-key');
+  const linkGeminiKey = document.getElementById("link-gemini-key");
   if (linkGeminiKey) {
-    linkGeminiKey.addEventListener('click', (e) => {
+    linkGeminiKey.addEventListener("click", (e) => {
       e.preventDefault();
-      createTab('https://aistudio.google.com/app/apikey', 'Get Gemini API Key');
-      toast('Opening Google AI Studio...', 'info');
+      createTab("https://aistudio.google.com/app/apikey", "Get Gemini API Key");
+      toast("Opening Google AI Studio...", "info");
     });
   }
 
   // ═══ CACHE & SITE DATA ═══
-  const btnShowCache = $('#btn-show-cache');
-  const btnClearCache = $('#btn-clear-cache');
-  const siteDataList = $('#site-data-list');
+  const btnShowCache = $("#btn-show-cache");
+  const btnClearCache = $("#btn-clear-cache");
+  const siteDataList = $("#site-data-list");
 
   if (btnShowCache && btnClearCache && siteDataList) {
-    btnShowCache.addEventListener('click', async () => {
-      siteDataList.style.display = 'block';
-      siteDataList.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">Loading...</div>';
+    btnShowCache.addEventListener("click", async () => {
+      siteDataList.style.display = "block";
+      siteDataList.innerHTML =
+        '<div style="color:#aaa;font-size:12px;text-align:center;">Loading...</div>';
       try {
         const domains = await window.api.appData.getSiteData();
         if (!domains || domains.length === 0) {
-          siteDataList.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">No site data found.</div>';
+          siteDataList.innerHTML =
+            '<div style="color:#aaa;font-size:12px;text-align:center;">No site data found.</div>';
           return;
         }
-        siteDataList.innerHTML = '';
-        domains.forEach(domain => {
-          const row = document.createElement('div');
-          row.style.display = 'flex';
-          row.style.justifyContent = 'space-between';
-          row.style.alignItems = 'center';
-          row.style.padding = '6px 4px';
-          row.style.borderBottom = '1px solid #333';
+        siteDataList.innerHTML = "";
+        domains.forEach((domain) => {
+          const row = document.createElement("div");
+          row.style.display = "flex";
+          row.style.justifyContent = "space-between";
+          row.style.alignItems = "center";
+          row.style.padding = "6px 4px";
+          row.style.borderBottom = "1px solid #333";
 
           row.innerHTML = `
             <div style="display:flex;align-items:center;gap:6px;overflow:hidden;">
@@ -942,15 +1029,18 @@ document.addEventListener('DOMContentLoaded', () => {
             </button>
           `;
 
-          row.querySelector('.cache-del-btn').addEventListener('click', async () => {
-            row.style.opacity = '0.5';
-            row.style.pointerEvents = 'none';
-            await window.api.appData.clearSiteData(domain);
-            row.remove();
-            if (siteDataList.children.length === 0) {
-              siteDataList.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">No site data found.</div>';
-            }
-          });
+          row
+            .querySelector(".cache-del-btn")
+            .addEventListener("click", async () => {
+              row.style.opacity = "0.5";
+              row.style.pointerEvents = "none";
+              await window.api.appData.clearSiteData(domain);
+              row.remove();
+              if (siteDataList.children.length === 0) {
+                siteDataList.innerHTML =
+                  '<div style="color:#aaa;font-size:12px;text-align:center;">No site data found.</div>';
+              }
+            });
 
           siteDataList.appendChild(row);
         });
@@ -959,44 +1049,51 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    btnClearCache.addEventListener('click', async () => {
-      if (confirm("Are you sure you want to clear all cookies, cache, and site data? This will also reload the browser to reset your session.")) {
+    btnClearCache.addEventListener("click", async () => {
+      if (
+        confirm(
+          "Are you sure you want to clear all cookies, cache, and site data? This will also reload the browser to reset your session.",
+        )
+      ) {
         btnShowCache.disabled = true;
         btnClearCache.disabled = true;
-        btnClearCache.innerHTML = '<span class="material-icons-round">hourglass_empty</span> Resetting...';
+        btnClearCache.innerHTML =
+          '<span class="material-icons-round">hourglass_empty</span> Resetting...';
 
         await window.api.appData.clearAllSiteData();
 
-        siteDataList.style.display = 'block';
-        siteDataList.innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;">Session reset and all site data cleared.</div>';
+        siteDataList.style.display = "block";
+        siteDataList.innerHTML =
+          '<div style="color:#aaa;font-size:12px;text-align:center;">Session reset and all site data cleared.</div>';
 
         // Reload the webview to start fresh
         try {
-          if (wv && typeof wv.reload === 'function') {
+          if (wv && typeof wv.reload === "function") {
             wv.reload();
           }
         } catch (err) {
-          console.log('Error reloading webview:', err);
+          console.log("Error reloading webview:", err);
         }
 
-        toast('Session Reset & Storage Cleared', 'success');
+        toast("Session Reset & Storage Cleared", "success");
         btnShowCache.disabled = false;
         btnClearCache.disabled = false;
-        btnClearCache.innerHTML = '<span class="material-icons-round">restart_alt</span> Reset & Clear Cache';
+        btnClearCache.innerHTML =
+          '<span class="material-icons-round">restart_alt</span> Reset & Clear Cache';
       }
     });
   }
 
-  $('#btn-save-settings').addEventListener('click', async () => {
+  $("#btn-save-settings").addEventListener("click", async () => {
     settings = {
       ...settings,
-      geminiApiKey: $('#set-geminiApiKey').value.trim(),
-      autoSubmit: $('#set-autoSubmit').value === 'true',
-      resumePath: ($('#set-resumePath')?.value || '').trim(),
-      jobPreference: $('#set-jobPreference')?.value || 'all'
+      geminiApiKey: $("#set-geminiApiKey").value.trim(),
+      autoSubmit: $("#set-autoSubmit").value === "true",
+      resumePath: ($("#set-resumePath")?.value || "").trim(),
+      jobPreference: $("#set-jobPreference")?.value || "all",
     };
     await window.api.settings.save(settings);
-    toast('Settings saved!', 'success');
+    toast("Settings saved!", "success");
   });
 
   // ═══ SHORTCUTS LOGIC ═══
@@ -1010,25 +1107,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (!shortcuts || shortcuts.length === 0) {
       shortcuts = [
-        { name: 'ChatGPT', url: 'https://chat.openai.com' },
-        { name: 'Claude', url: 'https://claude.ai' },
-        { name: 'Gemini', url: 'https://gemini.google.com' },
-        { name: 'LinkedIn', url: 'https://www.linkedin.com' },
-        { name: 'Gmail', url: 'https://mail.google.com' }
+        { name: "ChatGPT", url: "https://chat.openai.com" },
+        { name: "Claude", url: "https://claude.ai" },
+        { name: "Gemini", url: "https://gemini.google.com" },
+        { name: "LinkedIn", url: "https://www.linkedin.com" },
+        { name: "Gmail", url: "https://mail.google.com" },
       ];
-      try { await window.api.shortcuts.save(shortcuts); } catch (e) { }
+      try {
+        await window.api.shortcuts.save(shortcuts);
+      } catch (e) {}
     } else {
       // Migrate old broken URLs
       const urlFixes = {
-        'https://linkedin.com': 'https://www.linkedin.com',
-        'https://gmail.com': 'https://mail.google.com'
+        "https://linkedin.com": "https://www.linkedin.com",
+        "https://gmail.com": "https://mail.google.com",
       };
       let changed = false;
-      shortcuts.forEach(sc => {
-        if (urlFixes[sc.url]) { sc.url = urlFixes[sc.url]; changed = true; }
+      shortcuts.forEach((sc) => {
+        if (urlFixes[sc.url]) {
+          sc.url = urlFixes[sc.url];
+          changed = true;
+        }
       });
       if (changed) {
-        try { await window.api.shortcuts.save(shortcuts); } catch (e) { }
+        try {
+          await window.api.shortcuts.save(shortcuts);
+        } catch (e) {}
       }
     }
     renderShortcuts();
@@ -1040,25 +1144,25 @@ document.addEventListener('DOMContentLoaded', () => {
       let domain = u.hostname;
       // Map subdomains to main domain for better favicon resolution
       const domainMap = {
-        'mail.google.com': 'gmail.com',
-        'chat.openai.com': 'openai.com',
-        'www.linkedin.com': 'linkedin.com'
+        "mail.google.com": "gmail.com",
+        "chat.openai.com": "openai.com",
+        "www.linkedin.com": "linkedin.com",
       };
       domain = domainMap[domain] || domain;
       return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
     } catch (e) {
-      return '';
+      return "";
     }
   }
 
   function renderShortcuts() {
-    const grid = $('#shortcuts-grid');
+    const grid = $("#shortcuts-grid");
     // Remove everything from grid
-    grid.innerHTML = '';
+    grid.innerHTML = "";
 
     shortcuts.forEach((sc, index) => {
-      const el = document.createElement('div');
-      el.className = 'shortcut-item';
+      const el = document.createElement("div");
+      el.className = "shortcut-item";
       el.title = sc.url;
       el.draggable = true;
       el.dataset.index = index;
@@ -1067,56 +1171,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
       el.innerHTML = `
         <div class="sc-icon">
-          ${iconUrl
-          ? `<img src="${iconUrl}" class="sc-img" onerror="this.remove();this.parentElement.innerHTML='<span class=\\'material-icons-round\\'>public</span>'">`
-          : `<span class="material-icons-round">public</span>`
-        }
+          ${
+            iconUrl
+              ? `<img src="${iconUrl}" class="sc-img" onerror="this.remove();this.parentElement.innerHTML='<span class=\\'material-icons-round\\'>public</span>'">`
+              : `<span class="material-icons-round">public</span>`
+          }
         </div>
         <span class="sc-title">${escapeHtml(sc.name)}</span>
         <div class="sc-delete"><span class="material-icons-round">close</span></div>
       `;
 
       // --- Click to navigate ---
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('.sc-delete')) return;
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".sc-delete")) return;
         navigateTo(sc.url, sc.name);
       });
 
       // --- Delete ---
-      el.querySelector('.sc-delete').addEventListener('click', async (e) => {
+      el.querySelector(".sc-delete").addEventListener("click", async (e) => {
         e.stopPropagation();
         shortcuts.splice(index, 1);
-        try { await window.api.shortcuts.save(shortcuts); } catch (e) { }
+        try {
+          await window.api.shortcuts.save(shortcuts);
+        } catch (e) {}
         renderShortcuts();
       });
 
       // --- Drag & Drop ---
-      el.addEventListener('dragstart', (e) => {
+      el.addEventListener("dragstart", (e) => {
         dragSrcIndex = index;
-        el.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
+        el.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
       });
-      el.addEventListener('dragend', () => {
-        el.classList.remove('dragging');
-        grid.querySelectorAll('.shortcut-item').forEach(i => i.classList.remove('drag-over'));
+      el.addEventListener("dragend", () => {
+        el.classList.remove("dragging");
+        grid
+          .querySelectorAll(".shortcut-item")
+          .forEach((i) => i.classList.remove("drag-over"));
       });
-      el.addEventListener('dragover', (e) => {
+      el.addEventListener("dragover", (e) => {
         e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        el.classList.add('drag-over');
+        e.dataTransfer.dropEffect = "move";
+        el.classList.add("drag-over");
       });
-      el.addEventListener('dragleave', () => {
-        el.classList.remove('drag-over');
+      el.addEventListener("dragleave", () => {
+        el.classList.remove("drag-over");
       });
-      el.addEventListener('drop', async (e) => {
+      el.addEventListener("drop", async (e) => {
         e.preventDefault();
-        el.classList.remove('drag-over');
+        el.classList.remove("drag-over");
         const targetIndex = parseInt(el.dataset.index);
         if (dragSrcIndex !== null && dragSrcIndex !== targetIndex) {
           // Swap in array
           const moved = shortcuts.splice(dragSrcIndex, 1)[0];
           shortcuts.splice(targetIndex, 0, moved);
-          try { await window.api.shortcuts.save(shortcuts); } catch (e) { }
+          try {
+            await window.api.shortcuts.save(shortcuts);
+          } catch (e) {}
           renderShortcuts();
         }
         dragSrcIndex = null;
@@ -1126,26 +1237,30 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Add button — always last
-    const addBtn = document.createElement('div');
-    addBtn.className = 'shortcut-item add-btn';
+    const addBtn = document.createElement("div");
+    addBtn.className = "shortcut-item add-btn";
     addBtn.innerHTML = `
       <div class="sc-icon"><span class="material-icons-round">add</span></div>
       <span class="sc-title">Add shortcut</span>
     `;
-    addBtn.addEventListener('click', openAddModal);
+    addBtn.addEventListener("click", openAddModal);
     grid.appendChild(addBtn);
   }
 
   function navigateTo(url, title) {
     if (activeTabId) {
-      const tab = tabs.find(t => t.id === activeTabId);
+      const tab = tabs.find((t) => t.id === activeTabId);
       // If current tab is a blank/new tab, navigate in-place
-      const isBlank = !tab.url || tab.url === 'about:blank' || tab.url === '' || tab.url === 'about:newtab';
+      const isBlank =
+        !tab.url ||
+        tab.url === "about:blank" ||
+        tab.url === "" ||
+        tab.url === "about:newtab";
       if (isBlank) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
         if (wv) {
           // Use loadURL (imperative) instead of wv.src (declarative/async) for instant navigation
-          if (typeof wv.loadURL === 'function') {
+          if (typeof wv.loadURL === "function") {
             wv.loadURL(url);
           } else {
             wv.src = url;
@@ -1154,7 +1269,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tab.url = url;
         tab.title = title || url;
         addressInput.value = url;
-        shortcutsPage.classList.remove('active');
+        shortcutsPage.classList.remove("active");
         saveTabs();
       } else {
         createTab(url, title);
@@ -1169,34 +1284,34 @@ document.addEventListener('DOMContentLoaded', () => {
   let ctxOverlay = null;
 
   function hideContextMenu() {
-    if (ctxMenu) ctxMenu.classList.remove('visible');
-    if (ctxOverlay) ctxOverlay.classList.remove('visible');
+    if (ctxMenu) ctxMenu.classList.remove("visible");
+    if (ctxOverlay) ctxOverlay.classList.remove("visible");
   }
 
   // Create the overlay and menu elements once
   function ensureContextMenuElements() {
     if (!ctxOverlay) {
-      ctxOverlay = document.createElement('div');
-      ctxOverlay.className = 'ctx-overlay';
+      ctxOverlay = document.createElement("div");
+      ctxOverlay.className = "ctx-overlay";
       document.body.appendChild(ctxOverlay);
       // Any click on the overlay (including over the webview) dismisses the menu
-      ctxOverlay.addEventListener('mousedown', (e) => {
+      ctxOverlay.addEventListener("mousedown", (e) => {
         e.preventDefault();
         e.stopPropagation();
         hideContextMenu();
       });
     }
     if (!ctxMenu) {
-      ctxMenu = document.createElement('div');
-      ctxMenu.className = 'ctx-menu';
-      ctxMenu.id = 'ctx-menu';
+      ctxMenu = document.createElement("div");
+      ctxMenu.className = "ctx-menu";
+      ctxMenu.id = "ctx-menu";
       document.body.appendChild(ctxMenu);
     }
   }
 
   // Dismiss on Escape
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') hideContextMenu();
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hideContextMenu();
   });
 
   function showContextMenu(data, wv, tabId) {
@@ -1206,7 +1321,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hasImage = !!data.imgSrc;
     const hasSelection = !!data.selectedText;
 
-    let html = '';
+    let html = "";
 
     // ── Link section ──
     if (hasLink) {
@@ -1267,10 +1382,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let menuY = wvRect.top + data.y;
 
     // Show overlay + menu to measure
-    ctxOverlay.classList.add('visible');
-    ctxMenu.style.left = '0px';
-    ctxMenu.style.top = '0px';
-    ctxMenu.classList.add('visible');
+    ctxOverlay.classList.add("visible");
+    ctxMenu.style.left = "0px";
+    ctxMenu.style.top = "0px";
+    ctxMenu.classList.add("visible");
 
     // Adjust to keep within viewport
     const menuRect = ctxMenu.getBoundingClientRect();
@@ -1283,80 +1398,87 @@ document.addEventListener('DOMContentLoaded', () => {
     if (menuX < 0) menuX = 8;
     if (menuY < 0) menuY = 8;
 
-    ctxMenu.style.left = menuX + 'px';
-    ctxMenu.style.top = menuY + 'px';
+    ctxMenu.style.left = menuX + "px";
+    ctxMenu.style.top = menuY + "px";
 
     // Handle menu clicks
-    ctxMenu.querySelectorAll('.ctx-item').forEach(item => {
-      item.addEventListener('click', async (e) => {
+    ctxMenu.querySelectorAll(".ctx-item").forEach((item) => {
+      item.addEventListener("click", async (e) => {
         e.stopPropagation();
         const action = item.dataset.action;
 
         switch (action) {
-          case 'openLinkNewTab':
+          case "openLinkNewTab":
             if (data.linkUrl) {
-              const newId = createTab(data.linkUrl, data.linkText || 'Loading...');
+              const newId = createTab(
+                data.linkUrl,
+                data.linkText || "Loading...",
+              );
               switchTab(newId);
-              toast('Opened in new tab', 'info');
+              toast("Opened in new tab", "info");
             }
             break;
 
-          case 'copyLink':
+          case "copyLink":
             if (data.linkUrl) {
               navigator.clipboard.writeText(data.linkUrl).then(() => {
-                toast('Link copied!', 'success');
+                toast("Link copied!", "success");
               });
             }
             break;
 
-          case 'openImageNewTab':
+          case "openImageNewTab":
             if (data.imgSrc) {
-              const newId = createTab(data.imgSrc, 'Image');
+              const newId = createTab(data.imgSrc, "Image");
               switchTab(newId);
             }
             break;
 
-          case 'copyImageAddress':
+          case "copyImageAddress":
             if (data.imgSrc) {
               navigator.clipboard.writeText(data.imgSrc).then(() => {
-                toast('Image address copied!', 'success');
+                toast("Image address copied!", "success");
               });
             }
             break;
 
-          case 'copy':
+          case "copy":
             if (data.selectedText) {
               navigator.clipboard.writeText(data.selectedText).then(() => {
-                toast('Copied!', 'success');
+                toast("Copied!", "success");
               });
             }
             break;
 
-          case 'selectAll':
+          case "selectAll":
             try {
               wv.executeJavaScript('document.execCommand("selectAll")');
-            } catch (err) { }
+            } catch (err) {}
             break;
 
-          case 'back':
+          case "back":
             if (wv && wv.canGoBack()) wv.goBack();
             break;
 
-          case 'forward':
+          case "forward":
             if (wv && wv.canGoForward()) wv.goForward();
             break;
 
-          case 'reload':
+          case "reload":
             if (wv) wv.reload();
             break;
 
-          case 'inspect':
+          case "inspect":
             try {
               const wcId = wv.getWebContentsId();
-              await window.api.webview.inspectElement(wcId, Math.round(data.x), Math.round(data.y));
+              await window.api.webview.inspectElement(
+                wcId,
+                Math.round(data.x),
+                Math.round(data.y),
+              );
             } catch (err) {
-              console.log('Inspect element error:', err);
-              toast('Could not open DevTools', 'error');
+              console.log("Inspect element error:", err);
+              toast("Could not open DevTools", "error");
             }
             break;
         }
@@ -1368,59 +1490,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Add Shortcut Modal
   function openAddModal() {
-    inputScName.value = '';
-    inputScUrl.value = '';
-    modalOverlay.classList.add('active');
+    inputScName.value = "";
+    inputScUrl.value = "";
+    modalOverlay.classList.add("active");
     // Use setTimeout to ensure focus works
     setTimeout(() => inputScName.focus(), 100);
   }
 
   // Prevent clicks inside modal from propagating to shortcuts page
-  modalOverlay.addEventListener('mousedown', (e) => {
+  modalOverlay.addEventListener("mousedown", (e) => {
     if (e.target === modalOverlay) {
-      modalOverlay.classList.remove('active');
+      modalOverlay.classList.remove("active");
     }
   });
 
   // Stop propagation on modal inputs to prevent focus issues
-  modalOverlay.querySelector('.modal').addEventListener('mousedown', (e) => {
+  modalOverlay.querySelector(".modal").addEventListener("mousedown", (e) => {
     e.stopPropagation();
   });
 
-  btnCancelSc.addEventListener('click', () => {
-    modalOverlay.classList.remove('active');
+  btnCancelSc.addEventListener("click", () => {
+    modalOverlay.classList.remove("active");
   });
 
-  btnSaveSc.addEventListener('click', async () => {
+  btnSaveSc.addEventListener("click", async () => {
     const name = inputScName.value.trim();
     let url = inputScUrl.value.trim();
 
     if (!name || !url) {
-      toast('Name and URL required', 'error');
+      toast("Name and URL required", "error");
       return;
     }
 
-    if (!url.startsWith('http')) url = 'https://' + url;
+    if (!url.startsWith("http")) url = "https://" + url;
 
     shortcuts.push({ name, url });
-    try { await window.api.shortcuts.save(shortcuts); } catch (e) { }
+    try {
+      await window.api.shortcuts.save(shortcuts);
+    } catch (e) {}
     renderShortcuts();
-    modalOverlay.classList.remove('active');
-    toast('Shortcut added!', 'success');
+    modalOverlay.classList.remove("active");
+    toast("Shortcut added!", "success");
   });
 
   // Allow pressing Enter in the URL field to save
-  inputScUrl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') btnSaveSc.click();
+  inputScUrl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") btnSaveSc.click();
   });
-  inputScName.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') inputScUrl.focus();
+  inputScName.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") inputScUrl.focus();
   });
 
   // ═══ APPLY BUTTON — THE CORE FEATURE ═══
-  btnApply.addEventListener('click', async () => {
+  btnApply.addEventListener("click", async () => {
     if (!activeTabId) {
-      toast('Open a job page first!', 'warning');
+      toast("Open a job page first!", "warning");
       return;
     }
 
@@ -1431,10 +1555,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const wv = webviewContainer.querySelector(`#${activeTabId}`);
     if (!wv) return;
 
-    btnApply.classList.add('working');
-    btnApply.querySelector('.apply-label').textContent = 'Filling...';
-    statusText.textContent = 'Scanning form fields...';
-    log('accent', '⚡ Apply clicked — scanning page...');
+    btnApply.classList.add("working");
+    btnApply.querySelector(".apply-label").textContent = "Filling...";
+    statusText.textContent = "Scanning form fields...";
+    log("accent", "⚡ Apply clicked — scanning page...");
 
     try {
       // Step 1: Get field map and injector script
@@ -1447,68 +1571,93 @@ document.addEventListener('DOMContentLoaded', () => {
       // Step 2: Build options from settings
       const options = {
         overwrite: true, // Always overwrite existing values
-        autoSubmit: settings.autoSubmit === true
+        autoSubmit: settings.autoSubmit === true,
       };
 
       // Step 3: Inject the form-filler into the webview
       const script = injectorScript
-        .replace('FIELD_MAP_PLACEHOLDER', JSON.stringify(fieldMap))
-        .replace('USER_PROFILE_PLACEHOLDER', JSON.stringify(profile))
-        .replace('OPTIONS_PLACEHOLDER', JSON.stringify(options));
+        .replace("FIELD_MAP_PLACEHOLDER", JSON.stringify(fieldMap))
+        .replace("USER_PROFILE_PLACEHOLDER", JSON.stringify(profile))
+        .replace("OPTIONS_PLACEHOLDER", JSON.stringify(options));
 
       const resultJson = await wv.executeJavaScript(script);
       const result = JSON.parse(resultJson);
 
-      log('info', `📄 Page: ${result.pageTitle}`);
-      log('info', `📋 Found ${result.totalFields} fields — Filled ${result.filledCount} from profile`);
+      log("info", `📄 Page: ${result.pageTitle}`);
+      log(
+        "info",
+        `📋 Found ${result.totalFields} fields — Filled ${result.filledCount} from profile`,
+      );
 
       totalFilled += result.filledCount;
       updateStats();
 
       if (result.errors.length > 0) {
-        result.errors.forEach(err => log('error', '❌ ' + err));
+        result.errors.forEach((err) => log("error", "❌ " + err));
       }
 
       // Step 4: Handle unknown fields with AI — batch ALL questions at once
       if (result.unknownFields.length > 0) {
-        log('accent', `🤖 Sending ${result.unknownFields.length} unknown questions to AI (batch)...`);
-        statusText.textContent = 'AI answering all questions at once...';
+        log(
+          "accent",
+          `🤖 Sending ${result.unknownFields.length} unknown questions to AI (batch)...`,
+        );
+        statusText.textContent = "AI answering all questions at once...";
 
         // Pass jobPreference so AI answers unpaid questions correctly
         const profileWithPreference = {
           ...profile,
-          jobPreference: settings.jobPreference || 'all'
+          jobPreference: settings.jobPreference || "all",
         };
 
         const aiAnswers = await window.api.ai.answerQuestions({
           questions: result.unknownFields,
           jobContext: {
-            title: result.pageTitle || '',
-            company: result.company || '',
-            description: result.jobDescription || ''
+            title: result.pageTitle || "",
+            company: result.company || "",
+            description: result.jobDescription || "",
           },
-          userProfile: profileWithPreference
+          userProfile: profileWithPreference,
+          pageUrl: result.pageUrl || wv.getURL(),
         });
 
         // Check for server connection error
-        const serverError = aiAnswers.find(a => a.error && a.error.includes('Server not running'));
+        const serverError = aiAnswers.find(
+          (a) => a.error && a.error.includes("Server not running"),
+        );
         if (serverError) {
-          log('error', '❌ ' + serverError.error);
-          toast('Start the AI server: npx nodemon server.js', 'error');
+          log("error", "❌ " + serverError.error);
+          toast("Start the AI server: npx nodemon server.js", "error");
         }
 
         // Step 5: Build ONE script that fills ALL AI answers at once
         const validAnswers = [];
+        const skippedAnswers = [];
         for (const answer of aiAnswers) {
-          if (!answer.answer || answer.answer.trim() === '' || answer.answer === 'N/A') {
+          if (
+            !answer.answer ||
+            answer.answer.trim() === "" ||
+            answer.answer === "N/A"
+          ) {
             totalSkipped++;
-            log('warn', `⏭️ Skipped: "${answer.label}"`);
+            // Collect skipped answers to show with copy button
+            skippedAnswers.push({
+              label: answer.label,
+              answer: answer.answer || "N/A",
+            });
             continue;
           }
-          const field = result.unknownFields.find(f => f.label === answer.label);
+          const field = result.unknownFields.find(
+            (f) => f.label === answer.label,
+          );
           if (field) {
             validAnswers.push({ field, answer: answer.answer });
           }
+        }
+
+        // Log skipped answers with copy buttons
+        if (skippedAnswers.length > 0) {
+          logSkippedAnswers(skippedAnswers);
         }
 
         // Inject ALL answers in a single script execution
@@ -1519,112 +1668,139 @@ document.addEventListener('DOMContentLoaded', () => {
             totalAI += validAnswers.length;
 
             // ─── Show AI answers as styled copyable blocks in Logs ───
-            logAiAnswers(validAnswers.map(va => ({
-              label: va.field.label,
-              answer: va.answer
-            })));
+            logAiAnswers(
+              validAnswers.map((va) => ({
+                label: va.field.label,
+                answer: va.answer,
+              })),
+            );
           } catch (err) {
-            log('error', `❌ Batch fill failed: ${err.message}`);
+            log("error", `❌ Batch fill failed: ${err.message}`);
             totalSkipped += validAnswers.length;
           }
         }
 
-        log('info', `🤖 AI filled ${validAnswers.length} of ${result.unknownFields.length} questions`);
+        log(
+          "info",
+          `🤖 AI filled ${validAnswers.length} of ${result.unknownFields.length} questions`,
+        );
       }
 
       if (result.skippedFields.length > 0) {
         totalSkipped += result.skippedFields.length;
-        result.skippedFields.forEach(f => log('info', `⏭️ "${f.label}" — ${f.reason}`));
+        result.skippedFields.forEach((f) =>
+          log("info", `⏭️ "${f.label}" — ${f.reason}`),
+        );
       }
 
       // Step 5.5: Handle file upload (resume) — Multi-strategy approach
       if (result.hasFileUpload && result.fileUploadSelectors.length > 0) {
-        const resumePath = profile.resumePath || settings.resumePath || '';
+        const resumePath = profile.resumePath || settings.resumePath || "";
         if (resumePath) {
-          log('accent', `📎 Uploading resume: ${resumePath}`);
-          statusText.textContent = 'Uploading resume...';
+          log("accent", `📎 Uploading resume: ${resumePath}`);
+          statusText.textContent = "Uploading resume...";
 
-          const isGoogleForm = result.pageUrl.includes('docs.google.com/forms');
+          const isGoogleForm = result.pageUrl.includes("docs.google.com/forms");
           const webContentsId = wv.getWebContentsId();
 
           for (const fileField of result.fileUploadSelectors) {
             try {
               let uploadResult = null;
-              let uploadMethod = '';
+              let uploadMethod = "";
               let pathToUpload = resumePath;
 
-              if (fileField.label && fileField.label.toLowerCase().includes('cover letter')) {
-                const coverLetterPath = profile.coverLetterPath || '';
+              if (
+                fileField.label &&
+                fileField.label.toLowerCase().includes("cover letter")
+              ) {
+                const coverLetterPath = profile.coverLetterPath || "";
                 if (coverLetterPath) {
                   pathToUpload = coverLetterPath;
-                  log('accent', `📎 Uploading cover letter: ${pathToUpload}`);
+                  log("accent", `📎 Uploading cover letter: ${pathToUpload}`);
                 }
               }
 
               // Strategy 1: Smart DataTransfer injection (works on most standard forms)
               if (!isGoogleForm) {
-                log('info', `📎 Trying smart upload (DataTransfer) for "${fileField.label}"...`);
+                log(
+                  "info",
+                  `📎 Trying smart upload (DataTransfer) for "${fileField.label}"...`,
+                );
                 uploadResult = await window.api.engine.smartUploadFile({
                   webContentsId,
                   selector: fileField.selector,
-                  filePath: pathToUpload
+                  filePath: pathToUpload,
                 });
-                uploadMethod = 'DataTransfer';
+                uploadMethod = "DataTransfer";
               }
 
               // Strategy 2: CDP DOM.setFileInputFiles (fallback for standard forms)
               if (!uploadResult?.success && !isGoogleForm) {
-                log('info', `📎 Trying CDP upload for "${fileField.label}"...`);
+                log("info", `📎 Trying CDP upload for "${fileField.label}"...`);
                 uploadResult = await window.api.engine.uploadFile({
                   webContentsId,
                   selector: fileField.selector,
-                  filePath: pathToUpload
+                  filePath: pathToUpload,
                 });
-                uploadMethod = 'CDP';
+                uploadMethod = "CDP";
               }
 
               // Strategy 3: Google Forms file chooser interception
               if (!uploadResult?.success && isGoogleForm) {
-                log('info', `📎 Trying Google Forms upload for "${fileField.label}"...`);
+                log(
+                  "info",
+                  `📎 Trying Google Forms upload for "${fileField.label}"...`,
+                );
                 uploadResult = await window.api.engine.googleFormsUpload({
                   webContentsId,
-                  filePath: pathToUpload
+                  filePath: pathToUpload,
                 });
-                uploadMethod = 'GoogleForms';
+                uploadMethod = "GoogleForms";
               }
 
               if (uploadResult?.success) {
-                log('success', `✅ File uploaded to "${fileField.label}" via ${uploadMethod}`);
+                log(
+                  "success",
+                  `✅ File uploaded to "${fileField.label}" via ${uploadMethod}`,
+                );
               } else {
-                log('warn', `⚠️ File upload failed: ${uploadResult?.error || 'unknown error'}`);
+                log(
+                  "warn",
+                  `⚠️ File upload failed: ${uploadResult?.error || "unknown error"}`,
+                );
               }
             } catch (err) {
-              log('error', `❌ File upload error: ${err.message}`);
+              log("error", `❌ File upload error: ${err.message}`);
             }
           }
 
           // Wait for file upload to settle
-          await new Promise(r => setTimeout(r, 2000));
+          await new Promise((r) => setTimeout(r, 2000));
         } else {
-          log('warn', '⚠️ File upload field detected but no resume path configured');
-          toast('Set resume path in Settings for auto-upload', 'warning');
+          log(
+            "warn",
+            "⚠️ File upload field detected but no resume path configured",
+          );
+          toast("Set resume path in Settings for auto-upload", "warning");
         }
       }
 
       // Step 6: Auto-submit AFTER all fields (profile + AI + file) are filled
       if (settings.autoSubmit === true && result.filledCount + totalAI > 0) {
-        log('accent', '📤 Auto-submitting form...');
-        statusText.textContent = 'Submitting form...';
+        log("accent", "📤 Auto-submitting form...");
+        statusText.textContent = "Submitting form...";
         // Wait for all fields to settle
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 2000));
 
-        const currentUrl = await wv.executeJavaScript('window.location.href');
+        const currentUrl = await wv.executeJavaScript("window.location.href");
 
         try {
           // Primary: Use CDP native click for truly trusted events
           const webContentsId = wv.getWebContentsId();
-          const isGF = currentUrl.includes('docs.google.com/forms');
-          const isWF = currentUrl.includes('wellfound.com') || currentUrl.includes('angel.co');
+          const isGF = currentUrl.includes("docs.google.com/forms");
+          const isWF =
+            currentUrl.includes("wellfound.com") ||
+            currentUrl.includes("angel.co");
 
           // Determine the best submit selector for this page type
           let nativeClickSelector;
@@ -1632,46 +1808,49 @@ document.addEventListener('DOMContentLoaded', () => {
             nativeClickSelector = '[jsname="M2UYVd"]';
           } else if (isWF) {
             // Wellfound modal submit button — exact data-test attribute
-            nativeClickSelector = '[data-test="JobApplicationModal--SubmitButton"]';
+            nativeClickSelector =
+              '[data-test="JobApplicationModal--SubmitButton"]';
           } else {
             nativeClickSelector = 'button[type="submit"]';
           }
 
           const nativeResult = await window.api.engine.nativeClick({
             webContentsId,
-            selector: nativeClickSelector
+            selector: nativeClickSelector,
           });
 
           if (nativeResult.success) {
-            log('success', '✅ Form submitted! (native click)');
+            log("success", "✅ Form submitted! (native click)");
           } else {
             // Fallback: JavaScript click
-            log('info', '↩️ Trying JS click fallback...');
-            const jsResult = await wv.executeJavaScript(buildAutoSubmitScript());
-            if (jsResult === 'submitted') {
-              log('success', '✅ Form submitted! (JS click)');
+            log("info", "↩️ Trying JS click fallback...");
+            const jsResult = await wv.executeJavaScript(
+              buildAutoSubmitScript(),
+            );
+            if (jsResult === "submitted") {
+              log("success", "✅ Form submitted! (JS click)");
             } else {
-              log('warn', '⚠️ Submit: ' + jsResult);
+              log("warn", "⚠️ Submit: " + jsResult);
             }
           }
 
           // Check if page navigated after submit (indicating success)
-          await new Promise(r => setTimeout(r, 3000));
-          const newUrl = await wv.executeJavaScript('window.location.href');
+          await new Promise((r) => setTimeout(r, 3000));
+          const newUrl = await wv.executeJavaScript("window.location.href");
           if (newUrl !== currentUrl) {
-            log('success', '🎉 Page navigated — submission confirmed!');
+            log("success", "🎉 Page navigated — submission confirmed!");
           }
         } catch (e) {
-          log('warn', '⚠️ Auto-submit may have failed: ' + e.message);
+          log("warn", "⚠️ Auto-submit may have failed: " + e.message);
         }
       }
 
       updateStats();
       statusText.textContent = `Done! Filled ${result.filledCount + totalAI} fields`;
-      log('success', `🎉 Form filling complete!`);
-      btnApply.classList.remove('working');
-      btnApply.classList.add('done');
-      btnApply.querySelector('.apply-label').textContent = 'Done!';
+      log("success", `🎉 Form filling complete!`);
+      btnApply.classList.remove("working");
+      btnApply.classList.add("done");
+      btnApply.querySelector(".apply-label").textContent = "Done!";
 
       // Save to history
       await window.api.history.add({
@@ -1679,21 +1858,20 @@ document.addEventListener('DOMContentLoaded', () => {
         title: result.pageTitle,
         filled: result.filledCount,
         aiFilled: totalAI,
-        skipped: totalSkipped
+        skipped: totalSkipped,
       });
 
       // Reset button after 3s
       setTimeout(() => {
-        btnApply.classList.remove('done');
-        btnApply.querySelector('.apply-label').textContent = 'Apply';
+        btnApply.classList.remove("done");
+        btnApply.querySelector(".apply-label").textContent = "Apply";
       }, 3000);
-
     } catch (err) {
-      log('error', '❌ Error: ' + err.message);
-      statusText.textContent = 'Error — check logs';
-      toast('Apply failed: ' + err.message, 'error');
-      btnApply.classList.remove('working');
-      btnApply.querySelector('.apply-label').textContent = 'Apply';
+      log("error", "❌ Error: " + err.message);
+      statusText.textContent = "Error — check logs";
+      toast("Apply failed: " + err.message, "error");
+      btnApply.classList.remove("working");
+      btnApply.querySelector(".apply-label").textContent = "Apply";
     }
   });
 
@@ -1704,7 +1882,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const isGF = `window.location.hostname.includes('docs.google.com')`;
 
     // For Google Forms fields without selectors, find by label text
-    if (!field.selector || field.selector === '') {
+    if (!field.selector || field.selector === "") {
       return `
         (function() {
           const containers = document.querySelectorAll('.Qr7Oae, .freebirdFormviewerViewItemsItemItem, .geS5n');
@@ -1783,20 +1961,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Build a single script that fills ALL AI answers at once
   function buildBatchFillScript(validAnswers) {
-    const answersData = validAnswers.map(va => ({
+    const answersData = validAnswers.map((va) => ({
       label: va.field.label.substring(0, 150),
       answer: va.answer,
       type: va.field.type,
-      selector: va.field.selector || '',
-      name: va.field.name || '',
-      isWellfound: va.field.isWellfound || false
+      selector: va.field.selector || "",
+      name: va.field.name || "",
+      isWellfound: va.field.isWellfound || false,
+      isWorkTuring: va.field.isWorkTuring || false,
+      cardIndex: va.field.cardIndex ?? -1,
+      optionValues: va.field.optionValues || [],
+      options: va.field.options || [],
     }));
 
     return `
       (function() {
         const answers = ${JSON.stringify(answersData)};
         const isGF = window.location.hostname.includes('docs.google.com');
-        const isTuring = (window.location.hostname.includes('turing.com') &&
+        const isWorkTuringForm = window.location.hostname.includes('turing.com') &&
+                                 !!document.querySelector('[data-slot="dialog-panel"]') &&
+                                 !!document.querySelector('[data-slot="card-title"]');
+        const isTuring = !isWorkTuringForm &&
+                         (window.location.hostname.includes('turing.com') &&
                           document.querySelector('.job-interest-form') !== null);
         const isWellfound = (window.location.hostname.includes('wellfound.com') ||
                              window.location.hostname.includes('angel.co')) &&
@@ -1833,7 +2019,138 @@ document.addEventListener('DOMContentLoaded', () => {
 
         for (const ans of answers) {
           try {
-            if (isWellfound || ans.isWellfound) {
+            if (isWorkTuringForm || ans.isWorkTuring) {
+              // ── work.turing.com Radix UI form ──
+              const dialog = document.querySelector('[data-slot="dialog-panel"]');
+              if (!dialog) { console.warn('[WorkTuring] dialog panel not found'); continue; }
+
+              const allCards = dialog.querySelectorAll('[data-slot="card"]');
+
+              // Find the right card: by cardIndex first, then by label text
+              let card = null;
+              if (ans.cardIndex >= 0 && allCards[ans.cardIndex]) {
+                card = allCards[ans.cardIndex];
+              } else {
+                // Search by label text match
+                for (const c of allCards) {
+                  const titleEl = c.querySelector('[data-slot="card-title"]') || c.querySelector('label');
+                  if (!titleEl) continue;
+                  const cLabel = titleEl.textContent.trim().replace(/\\s+/g, ' ');
+                  if (cLabel.toLowerCase().includes(ans.label.toLowerCase().substring(0, 40)) ||
+                      ans.label.toLowerCase().includes(cLabel.toLowerCase().substring(0, 40))) {
+                    card = c;
+                    break;
+                  }
+                }
+              }
+
+              if (!card) { console.warn('[WorkTuring] card not found for:', ans.label); continue; }
+
+              // Radix radio: click the matching button[role="radio"]
+              if (ans.type === 'radix-radio') {
+                const radioButtons = card.querySelectorAll('button[role="radio"][data-slot="radio-group-item"]');
+                const target = ans.answer.toLowerCase().trim();
+                let clicked = false;
+
+                // Match by label text of associated <label>
+                for (const btn of radioButtons) {
+                  const btnId = btn.id;
+                  let lblText = '';
+                  if (btnId) {
+                    const lbl = card.querySelector('label[for="' + CSS.escape(btnId) + '"]');
+                    if (lbl) lblText = lbl.textContent.trim().toLowerCase();
+                  }
+                  if (!lblText) lblText = (btn.getAttribute('value') || btn.textContent).toLowerCase().trim();
+                  if (lblText === target || lblText.includes(target) || target.includes(lblText) ||
+                      (target.includes('yes') && lblText.includes('yes')) ||
+                      (target.includes('no') && !target.includes('not') && lblText === 'no')) {
+                    btn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                    btn.click();
+                    clicked = true;
+                    filled++;
+                    console.log('[WorkTuring] radio clicked:', lblText, 'for', ans.label);
+                    break;
+                  }
+                }
+
+                // Fallback: check by value attribute from optionValues
+                if (!clicked && ans.optionValues && ans.optionValues.length > 0) {
+                  for (const btn of radioButtons) {
+                    const bv = (btn.getAttribute('value') || '').toLowerCase();
+                    if (bv === target || target.includes(bv)) {
+                      btn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                      btn.click();
+                      clicked = true;
+                      filled++;
+                      break;
+                    }
+                  }
+                }
+
+                // Last resort: click first button if still not clicked
+                if (!clicked && radioButtons.length > 0) {
+                  // Try to pick a "yes" button
+                  const yesBtn = Array.from(radioButtons).find(b =>
+                    (b.getAttribute('value') || b.textContent).toLowerCase().includes('yes')
+                  );
+                  const fallbackBtn = yesBtn || radioButtons[0];
+                  fallbackBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                  fallbackBtn.click();
+                  filled++;
+                  console.warn('[WorkTuring] radio fallback clicked for:', ans.label);
+                }
+              }
+
+              // Radix checkbox: click the button[role="checkbox"]
+              else if (ans.type === 'radix-checkbox') {
+                const checkboxButtons = card.querySelectorAll('button[role="checkbox"][data-slot="checkbox"]');
+                for (const btn of checkboxButtons) {
+                  const alreadyChecked = btn.getAttribute('aria-checked') === 'true' ||
+                                        btn.getAttribute('data-state') === 'checked';
+                  if (!alreadyChecked) {
+                    btn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                    btn.click();
+                    filled++;
+                    console.log('[WorkTuring] checkbox clicked for:', ans.label);
+                  }
+                }
+              }
+
+              // Textarea or text input
+              else {
+                // Try by selector first (most precise)
+                let fieldEl = null;
+                if (ans.selector) {
+                  try { fieldEl = card.querySelector(ans.selector) || document.querySelector(ans.selector); } catch(e) {}
+                }
+                // Fallback: find textarea in the card
+                if (!fieldEl) {
+                  fieldEl = card.querySelector('textarea[data-slot="textarea"], textarea');
+                }
+                // Fallback: input
+                if (!fieldEl) {
+                  fieldEl = card.querySelector('input[type="text"], input[type="url"], input[type="email"]');
+                }
+
+                if (fieldEl) {
+                  fieldEl.focus();
+                  try {
+                    const proto = fieldEl.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                    if (setter) setter.call(fieldEl, ans.answer);
+                    else fieldEl.value = ans.answer;
+                  } catch(e) { fieldEl.value = ans.answer; }
+                  fieldEl.dispatchEvent(new Event('input', {bubbles:true}));
+                  fieldEl.dispatchEvent(new Event('change', {bubbles:true}));
+                  fieldEl.dispatchEvent(new Event('blur', {bubbles:true}));
+                  filled++;
+                  console.log('[WorkTuring] textarea filled:', ans.label, '->', ans.answer.substring(0, 30));
+                } else {
+                  console.warn('[WorkTuring] field not found for:', ans.label);
+                }
+              }
+
+            } else if (isWellfound || ans.isWellfound) {
               // ── Wellfound modal: find the textarea by name or selector ──
               const modal = document.querySelector('[data-test="JobApplication-Modal"]');
               let fieldEl = null;
@@ -2139,7 +2456,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ═══ LINKEDIN AUTO APPLY ENGINE ═══
-  let liInjectorScript = '';
+  let liInjectorScript = "";
   let liIsRunning = false;
   let liIsPaused = false;
   let liShouldStop = false;
@@ -2154,14 +2471,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = 'square';
+      osc.type = "square";
       osc.frequency.value = 880;
       gain.gain.value = 0.3;
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
       liBeepOscillator = { oscillator: osc, context: ctx };
-    } catch (e) { console.warn('Beep failed:', e); }
+    } catch (e) {
+      console.warn("Beep failed:", e);
+    }
   }
 
   function liStopBeep() {
@@ -2169,17 +2488,19 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         liBeepOscillator.oscillator.stop();
         liBeepOscillator.context.close();
-      } catch (e) { }
+      } catch (e) {}
       liBeepOscillator = null;
     }
   }
 
   async function liDelay(ms) {
-    await new Promise(r => setTimeout(r, ms));
+    await new Promise((r) => setTimeout(r, ms));
   }
 
   async function liRandomDelay(minSec, maxSec) {
-    const ms = Math.floor(Math.random() * (maxSec - minSec) * 1000 + minSec * 1000);
+    const ms = Math.floor(
+      Math.random() * (maxSec - minSec) * 1000 + minSec * 1000,
+    );
     await liDelay(ms);
   }
 
@@ -2190,30 +2511,29 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function liUpdateProgress(currentJobTitle) {
-    const limit = parseInt($('#li-apply-limit').value) || 25;
-    $('#li-applied-count').textContent = liAppliedCount;
-    $('#li-skipped-count').textContent = liSkippedCount;
-    $('#li-failed-count').textContent = liFailedCount;
+    const limit = parseInt($("#li-apply-limit").value) || 25;
+    $("#li-applied-count").textContent = liAppliedCount;
+    $("#li-skipped-count").textContent = liSkippedCount;
+    $("#li-failed-count").textContent = liFailedCount;
     const pct = Math.round((liAppliedCount / limit) * 100);
-    $('#li-progress-bar').style.width = Math.min(pct, 100) + '%';
+    $("#li-progress-bar").style.width = Math.min(pct, 100) + "%";
     if (currentJobTitle) {
-      $('#li-current-job').textContent = currentJobTitle;
+      $("#li-current-job").textContent = currentJobTitle;
     }
     statusText.textContent = `LinkedIn: ${liAppliedCount}/${limit} applied`;
   }
 
   async function liInject(wv, action, options = {}) {
-    if (!liInjectorScript) {
-      liInjectorScript = await window.api.engine.getLinkedInInjector();
-    }
+    // Always read fresh from disk — avoids stale cached scripts across reloads
+    liInjectorScript = await window.api.engine.getLinkedInInjector();
 
     const fieldMap = await window.api.profile.getFieldMap();
     const opts = { action, overwrite: true, ...options };
 
     const script = liInjectorScript
-      .replace('FIELD_MAP_PLACEHOLDER', JSON.stringify(fieldMap))
-      .replace('USER_PROFILE_PLACEHOLDER', JSON.stringify(profile))
-      .replace('OPTIONS_PLACEHOLDER', JSON.stringify(opts));
+      .replace("FIELD_MAP_PLACEHOLDER", JSON.stringify(fieldMap))
+      .replace("USER_PROFILE_PLACEHOLDER", JSON.stringify(profile))
+      .replace("OPTIONS_PLACEHOLDER", JSON.stringify(opts));
 
     const resultJson = await wv.executeJavaScript(script);
     return JSON.parse(resultJson);
@@ -2221,15 +2541,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function linkedinAutoApply() {
     if (liIsRunning) {
-      toast('LinkedIn automation is already running!', 'warning');
+      toast("LinkedIn automation is already running!", "warning");
       return;
     }
 
     const wv = webviewContainer.querySelector(`#${activeTabId}`);
-    if (!wv) { toast('Open LinkedIn job search first!', 'error'); return; }
+    if (!wv) {
+      toast("Open LinkedIn job search first!", "error");
+      return;
+    }
 
-    const limit = parseInt($('#li-apply-limit').value) || 25;
-    const delaySec = parseInt($('#li-delay').value) || 5;
+    const limit = parseInt($("#li-apply-limit").value) || 25;
+    const delaySec = parseInt($("#li-delay").value) || 5;
 
     // Save latest profile
     profile = collectProfile();
@@ -2243,34 +2566,42 @@ document.addEventListener('DOMContentLoaded', () => {
     liFailedCount = 0;
 
     // Show controls
-    $('#btn-li-start').style.display = 'none';
-    $('#btn-li-pause').style.display = '';
-    $('#btn-li-stop').style.display = '';
-    $('#li-progress-section').style.display = '';
-    leftPanel.classList.add('open');
+    $("#btn-li-start").style.display = "none";
+    $("#btn-li-pause").style.display = "";
+    $("#btn-li-stop").style.display = "";
+    $("#li-progress-section").style.display = "";
+    leftPanel.classList.add("open");
 
-    log('accent', '🚀 LinkedIn Easy Apply automation started!');
-    log('info', `📋 Target: ${limit} applications, delay: ${delaySec}s`);
-    liUpdateProgress('Scanning jobs...');
+    log("accent", "🚀 LinkedIn Easy Apply automation started!");
+    log("info", `📋 Target: ${limit} applications, delay: ${delaySec}s`);
+    liUpdateProgress("Scanning jobs...");
 
     try {
       let pageAttempts = 0;
       const maxPageAttempts = 20; // Safety limit
 
-      while (liAppliedCount < limit && !liShouldStop && pageAttempts < maxPageAttempts) {
+      while (
+        liAppliedCount < limit &&
+        !liShouldStop &&
+        pageAttempts < maxPageAttempts
+      ) {
         pageAttempts++;
         await liWaitIfPaused();
 
         // Step 1: Scan for job cards
-        log('info', '🔍 Scanning job cards on current page...');
+        log("info", "🔍 Scanning job cards on current page...");
         await liDelay(2000);
-        const scanResult = await liInject(wv, 'scanJobs');
+        const scanResult = await liInject(wv, "scanJobs");
 
-        if (!scanResult.success || !scanResult.data.jobs || scanResult.data.jobs.length === 0) {
-          log('warn', '⚠️ No job cards found. Trying to load more...');
-          const scrollResult = await liInject(wv, 'scrollJobList');
+        if (
+          !scanResult.success ||
+          !scanResult.data.jobs ||
+          scanResult.data.jobs.length === 0
+        ) {
+          log("warn", "⚠️ No job cards found. Trying to load more...");
+          const scrollResult = await liInject(wv, "scrollJobList");
           if (!scrollResult.success) {
-            log('error', '❌ No more jobs available. Stopping.');
+            log("error", "❌ No more jobs available. Stopping.");
             break;
           }
           await liDelay(3000);
@@ -2278,7 +2609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const jobs = scanResult.data.jobs;
-        log('info', `📃 Found ${jobs.length} job cards`);
+        log("info", `📃 Found ${jobs.length} job cards`);
 
         // Step 2: Process each job
         for (let i = 0; i < jobs.length; i++) {
@@ -2289,20 +2620,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
           // Skip already-applied jobs
           if (job.isApplied) {
-            log('info', `⏭️ Already applied: ${job.title}`);
+            log("info", `⏭️ Already applied: ${job.title}`);
             liSkippedCount++;
             liUpdateProgress(job.title);
             continue;
           }
 
-          log('accent', `\n[${liAppliedCount + 1}/${limit}] 📝 ${job.title} at ${job.company}`);
+          log(
+            "accent",
+            `\n[${liAppliedCount + 1}/${limit}] 📝 ${job.title} at ${job.company}`,
+          );
           liUpdateProgress(job.title);
 
           try {
             // Click on the job card
-            const clickResult = await liInject(wv, 'clickJob', { jobIndex: i, jobId: job.jobId });
+            const clickResult = await liInject(wv, "clickJob", {
+              jobIndex: i,
+              jobId: job.jobId,
+            });
             if (!clickResult.success) {
-              log('warn', `⚠️ Could not click job card: ${clickResult.error}`);
+              log("warn", `⚠️ Could not click job card: ${clickResult.error}`);
               liSkippedCount++;
               liUpdateProgress();
               continue;
@@ -2311,14 +2648,17 @@ document.addEventListener('DOMContentLoaded', () => {
             await liRandomDelay(2, 4);
 
             // Click Easy Apply button
-            const easyApplyResult = await liInject(wv, 'clickEasyApply');
+            const easyApplyResult = await liInject(wv, "clickEasyApply");
             if (!easyApplyResult.success) {
-              if (easyApplyResult.error === 'ALREADY_APPLIED') {
-                log('info', `⏭️ Already applied: ${job.title}`);
-              } else if (easyApplyResult.error === 'EXTERNAL_APPLY') {
-                log('info', `⏭️ External apply (not Easy Apply): ${job.title}`);
+              if (easyApplyResult.error === "ALREADY_APPLIED") {
+                log("info", `⏭️ Already applied: ${job.title}`);
+              } else if (easyApplyResult.error === "EXTERNAL_APPLY") {
+                log("info", `⏭️ External apply (not Easy Apply): ${job.title}`);
               } else {
-                log('warn', `⚠️ No Easy Apply button: ${easyApplyResult.error}`);
+                log(
+                  "warn",
+                  `⚠️ No Easy Apply button: ${easyApplyResult.error}`,
+                );
               }
               liSkippedCount++;
               liUpdateProgress();
@@ -2329,24 +2669,33 @@ document.addEventListener('DOMContentLoaded', () => {
             await liDelay(2000);
 
             // Get job description ONCE before filling steps (plain text)
-            let jobDescText = '';
+            let jobDescText = "";
             try {
-              const jdResult = await liInject(wv, 'getJobDescription');
+              const jdResult = await liInject(wv, "getJobDescription");
               if (jdResult.success && jdResult.data) {
                 const jd = jdResult.data;
                 jobDescText = [
                   `Title: ${jd.title}`,
                   `Company: ${jd.company}`,
                   `Location: ${jd.location}`,
-                  jd.workTypes?.length ? `Type: ${jd.workTypes.join(', ')}` : '',
-                  jd.companyDetails ? `Industry: ${jd.companyDetails}` : '',
-                  '',
-                  'Job Description:',
-                  jd.description || ''
-                ].filter(Boolean).join('\n');
-                log('info', `  📋 Got job description (${jobDescText.length} chars)`);
+                  jd.workTypes?.length
+                    ? `Type: ${jd.workTypes.join(", ")}`
+                    : "",
+                  jd.companyDetails ? `Industry: ${jd.companyDetails}` : "",
+                  "",
+                  "Job Description:",
+                  jd.description || "",
+                ]
+                  .filter(Boolean)
+                  .join("\n");
+                log(
+                  "info",
+                  `  📋 Got job description (${jobDescText.length} chars)`,
+                );
               }
-            } catch (e) { log('warn', '  ⚠️ Could not get job description'); }
+            } catch (e) {
+              log("warn", "  ⚠️ Could not get job description");
+            }
 
             // Process multi-step form
             let stepCount = 0;
@@ -2359,37 +2708,54 @@ document.addEventListener('DOMContentLoaded', () => {
               stepCount++;
               await liWaitIfPaused();
 
-              log('info', `  📄 Step ${stepCount} — Filling form fields...`);
+              log("info", `  📄 Step ${stepCount} — Filling form fields...`);
 
               // Fill current step
-              const fillResult = await liInject(wv, 'fillStep');
+              const fillResult = await liInject(wv, "fillStep");
 
               if (!fillResult.success) {
-                if (fillResult.error === 'NO_MODAL_FOUND') {
-                  log('info', '  Modal closed, checking status...');
+                if (fillResult.error === "NO_MODAL_FOUND") {
+                  log("info", "  Modal closed, checking status...");
                   await liDelay(1000);
-                  const statusResult = await liInject(wv, 'checkStatus');
-                  if (statusResult.success && statusResult.data.applicationSent) {
+                  const statusResult = await liInject(wv, "checkStatus");
+                  if (
+                    statusResult.success &&
+                    statusResult.data.applicationSent
+                  ) {
                     applicationSubmitted = true;
                   }
                   break;
                 }
-                log('warn', `  ⚠️ Fill error: ${fillResult.error}`);
+                log("warn", `  ⚠️ Fill error: ${fillResult.error}`);
                 break;
               }
 
               const stepData = fillResult.data;
-              const profileFilled = stepData.filledFields.filter(f => f.source === 'profile').length;
-              const aiFilled = stepData.filledFields.filter(f => f.source === 'ai').length;
-              log('info', `  ✏️ Filled ${profileFilled} from profile, ${aiFilled} from AI, ${stepData.skippedFields.length} skipped`);
+              const profileFilled = stepData.filledFields.filter(
+                (f) => f.source === "profile",
+              ).length;
+              const aiFilled = stepData.filledFields.filter(
+                (f) => f.source === "ai",
+              ).length;
+              log(
+                "info",
+                `  ✏️ Filled ${profileFilled} from profile, ${aiFilled} from AI, ${stepData.skippedFields.length} skipped`,
+              );
 
               // Handle unknown fields with AI — send ALL questions at once with job description
               if (stepData.unknownFields.length > 0) {
-                log('accent', `  🤖 Asking AI for ${stepData.unknownFields.length} unknown questions...`);
+                log(
+                  "accent",
+                  `  🤖 Asking AI for ${stepData.unknownFields.length} unknown questions...`,
+                );
 
                 // Build a combined prompt with all questions + job description context
-                const questionsForAI = stepData.unknownFields.map(f => {
-                  let q = { label: f.label, type: f.type, required: f.required };
+                const questionsForAI = stepData.unknownFields.map((f) => {
+                  let q = {
+                    label: f.label,
+                    type: f.type,
+                    required: f.required,
+                  };
                   if (f.options) q.options = f.options;
                   return q;
                 });
@@ -2397,7 +2763,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Inject job preference into the profile context so AI can answer accordingly
                 const profileWithPreference = {
                   ...profile,
-                  jobPreference: settings.jobPreference || 'all'
+                  jobPreference: settings.jobPreference || "all",
                 };
 
                 try {
@@ -2407,37 +2773,57 @@ document.addEventListener('DOMContentLoaded', () => {
                     jobContext: {
                       title: job.title,
                       company: job.company,
-                      description: jobDescText
+                      description: jobDescText,
                     },
-                    userProfile: profileWithPreference
+                    userProfile: profileWithPreference,
+                    pageUrl: wv.getURL(),
                   });
 
-                  console.log(`🤖 AI answers received (${(aiAnswers || []).length} total):`, JSON.stringify(aiAnswers, null, 2));
+                  console.log(
+                    `🤖 AI answers received (${(aiAnswers || []).length} total):`,
+                    JSON.stringify(aiAnswers, null, 2),
+                  );
 
                   // Filter valid answers
-                  const validAiAnswers = (aiAnswers || []).filter(a => a && a.answer && a.answer.trim() && a.answer !== 'N/A');
-                  console.log(`🤖 Valid AI answers (${validAiAnswers.length}):`, JSON.stringify(validAiAnswers, null, 2));
+                  const validAiAnswers = (aiAnswers || []).filter(
+                    (a) =>
+                      a && a.answer && a.answer.trim() && a.answer !== "N/A",
+                  );
+                  console.log(
+                    `🤖 Valid AI answers (${validAiAnswers.length}):`,
+                    JSON.stringify(validAiAnswers, null, 2),
+                  );
 
                   // ── UNPAID JOB DETECTION ──
                   // If user selected "Only Paid" and AI got an unpaid/no-equity question,
                   // check if any answer signals this is an unpaid role.
-                  if ((settings.jobPreference || 'all') === 'paid') {
-                    const unpaidSignalAnswer = (aiAnswers || []).find(a => {
-                      const lbl = (a.label || '').toLowerCase();
-                      const isUnpaidQuestion = lbl.includes('unpaid') || lbl.includes('no equity') ||
-                        lbl.includes('no compensation') || lbl.includes('without pay') ||
-                        lbl.includes('no salary') || lbl.includes('volunteer') ||
-                        (lbl.includes('willing') && (lbl.includes('unpaid') || lbl.includes('equity')));
+                  if ((settings.jobPreference || "all") === "paid") {
+                    const unpaidSignalAnswer = (aiAnswers || []).find((a) => {
+                      const lbl = (a.label || "").toLowerCase();
+                      const isUnpaidQuestion =
+                        lbl.includes("unpaid") ||
+                        lbl.includes("no equity") ||
+                        lbl.includes("no compensation") ||
+                        lbl.includes("without pay") ||
+                        lbl.includes("no salary") ||
+                        lbl.includes("volunteer") ||
+                        (lbl.includes("willing") &&
+                          (lbl.includes("unpaid") || lbl.includes("equity")));
                       return isUnpaidQuestion;
                     });
                     if (unpaidSignalAnswer) {
                       // This job is explicitly unpaid — skip it
-                      log('warn', `⛔ SKIPPING unpaid job: "${job.title}" — You have set "Only Paid Jobs" preference`);
-                      toast(`⛔ Skipped unpaid job: ${job.title}`, 'warning');
+                      log(
+                        "warn",
+                        `⛔ SKIPPING unpaid job: "${job.title}" — You have set "Only Paid Jobs" preference`,
+                      );
+                      toast(`⛔ Skipped unpaid job: ${job.title}`, "warning");
                       liSkippedCount++;
                       liUpdateProgress();
                       // Dismiss the modal and move to next job
-                      try { await liInject(wv, 'dismissModal'); } catch (e) {}
+                      try {
+                        await liInject(wv, "dismissModal");
+                      } catch (e) {}
                       await liDelay(1500);
                       applicationSubmitted = false;
                       break; // Break out of the step while-loop for this job
@@ -2447,84 +2833,119 @@ document.addEventListener('DOMContentLoaded', () => {
                   // Log AI answers to Logs panel with copy buttons
                   if (validAiAnswers.length > 0) {
                     logAiAnswers(validAiAnswers);
-                    const aiFillResult = await liInject(wv, 'fillStep', { aiAnswers: validAiAnswers });
+                    const aiFillResult = await liInject(wv, "fillStep", {
+                      aiAnswers: validAiAnswers,
+                    });
                     if (aiFillResult.success) {
-                      const newAiFilled = aiFillResult.data.filledFields.filter(f => f.source === 'ai').length;
-                      log('success', `  ✅ AI filled ${newAiFilled} additional fields`);
-                      console.log('✅ aiFillResult.data:', JSON.stringify(aiFillResult.data, null, 2));
+                      const newAiFilled = aiFillResult.data.filledFields.filter(
+                        (f) => f.source === "ai",
+                      ).length;
+                      log(
+                        "success",
+                        `  ✅ AI filled ${newAiFilled} additional fields`,
+                      );
+                      console.log(
+                        "✅ aiFillResult.data:",
+                        JSON.stringify(aiFillResult.data, null, 2),
+                      );
                     } else {
-                      console.warn('⚠️ aiFillResult failed:', aiFillResult);
+                      console.warn("⚠️ aiFillResult failed:", aiFillResult);
                     }
                   } else {
-                    log('warn', `  ⚠️ AI returned no valid answers for ${questionsForAI.length} questions`);
+                    log(
+                      "warn",
+                      `  ⚠️ AI returned no valid answers for ${questionsForAI.length} questions`,
+                    );
                   }
                 } catch (aiErr) {
-                  log('error', `  ❌ AI error: ${aiErr.message}`);
+                  log("error", `  ❌ AI error: ${aiErr.message}`);
                 }
               }
 
               // Handle file upload (resume)
-              if (stepData.hasFileUpload && stepData.fileUploadSelectors.length > 0) {
-                const resumePath = profile.resumePath || settings.resumePath || '';
+              if (
+                stepData.hasFileUpload &&
+                stepData.fileUploadSelectors.length > 0
+              ) {
+                const resumePath =
+                  profile.resumePath || settings.resumePath || "";
                 if (resumePath) {
-                  log('accent', `  📎 Uploading resume...`);
+                  log("accent", `  📎 Uploading resume...`);
                   const webContentsId = wv.getWebContentsId();
                   for (const fileField of stepData.fileUploadSelectors) {
                     try {
                       let pathToUpload = resumePath;
-                      if (fileField.label && fileField.label.toLowerCase().includes('cover letter')) {
-                        const coverLetterPath = profile.coverLetterPath || '';
+                      if (
+                        fileField.label &&
+                        fileField.label.toLowerCase().includes("cover letter")
+                      ) {
+                        const coverLetterPath = profile.coverLetterPath || "";
                         if (coverLetterPath) {
                           pathToUpload = coverLetterPath;
-                          log('accent', `📎 Uploading cover letter...`);
+                          log("accent", `📎 Uploading cover letter...`);
                         }
                       }
                       const uploadResult = await window.api.engine.uploadFile({
                         webContentsId,
                         selector: fileField.selector,
-                        filePath: pathToUpload
+                        filePath: pathToUpload,
                       });
                       if (uploadResult.success) {
-                        log('success', `  ✅ Resume uploaded`);
+                        log("success", `  ✅ Resume uploaded`);
                       } else {
-                        log('warn', `  ⚠️ Upload: ${uploadResult.error}`);
+                        log("warn", `  ⚠️ Upload: ${uploadResult.error}`);
                       }
                     } catch (err) {
-                      log('error', `  ❌ Upload error: ${err.message}`);
+                      log("error", `  ❌ Upload error: ${err.message}`);
                     }
                   }
                   await liDelay(1500);
                 } else {
-                  log('warn', '  ⚠️ Resume upload field found but no resume path set');
+                  log(
+                    "warn",
+                    "  ⚠️ Resume upload field found but no resume path set",
+                  );
                 }
               }
 
               await liDelay(800);
 
               // Click Next / Review / Submit
-              const nextResult = await liInject(wv, 'nextStep');
+              const nextResult = await liInject(wv, "nextStep");
               if (!nextResult.success) {
-                log('warn', `  ⚠️ No navigation button found: ${nextResult.error}`);
-                await liInject(wv, 'dismissModal');
+                log(
+                  "warn",
+                  `  ⚠️ No navigation button found: ${nextResult.error}`,
+                );
+                await liInject(wv, "dismissModal");
                 await liDelay(1000);
                 break;
               }
 
-              log('info', `  ➡️ Clicked: ${nextResult.data.clicked}`);
+              log("info", `  ➡️ Clicked: ${nextResult.data.clicked}`);
 
               // ═══ REVIEW LOOP PROTECTION ═══
-              if (nextResult.data.clicked === 'review') {
+              if (nextResult.data.clicked === "review") {
                 consecutiveReviews++;
-                log('info', `  🔄 Review click #${consecutiveReviews}/${MAX_CONSECUTIVE_REVIEWS}`);
+                log(
+                  "info",
+                  `  🔄 Review click #${consecutiveReviews}/${MAX_CONSECUTIVE_REVIEWS}`,
+                );
 
                 if (consecutiveReviews >= MAX_CONSECUTIVE_REVIEWS) {
-                  log('error', `  🚨 Review button clicked ${MAX_CONSECUTIVE_REVIEWS}+ times — STUCK! Playing alert...`);
+                  log(
+                    "error",
+                    `  🚨 Review button clicked ${MAX_CONSECUTIVE_REVIEWS}+ times — STUCK! Playing alert...`,
+                  );
                   // Start continuous beep
                   liStartBeep();
                   liIsPaused = true;
-                  $('#btn-li-pause').innerHTML = '<span class="material-icons-round">play_arrow</span> Resume';
+                  $("#btn-li-pause").innerHTML =
+                    '<span class="material-icons-round">play_arrow</span> Resume';
                   // Show alert popup — user must click OK
-                  alert(`⚠️ STUCK: "Review" button has been clicked ${MAX_CONSECUTIVE_REVIEWS} times in a row without progress.\n\nPlease check this application manually in the browser, then click OK and Resume to continue.`);
+                  alert(
+                    `⚠️ STUCK: "Review" button has been clicked ${MAX_CONSECUTIVE_REVIEWS} times in a row without progress.\n\nPlease check this application manually in the browser, then click OK and Resume to continue.`,
+                  );
                   // Stop beep after user clicks OK
                   liStopBeep();
                   // Reset counter — user may resume or stop
@@ -2536,17 +2957,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 consecutiveReviews = 0;
               }
 
-              if (nextResult.data.clicked === 'submit') {
+              if (nextResult.data.clicked === "submit") {
                 await liDelay(3000);
-                const statusResult = await liInject(wv, 'checkStatus');
+                const statusResult = await liInject(wv, "checkStatus");
                 if (statusResult.success && statusResult.data.applicationSent) {
                   applicationSubmitted = true;
                 } else {
                   if (statusResult.data?.validationErrors?.length > 0) {
-                    log('warn', `  ⚠️ Validation errors: ${statusResult.data.validationErrors.join(', ')}`);
+                    log(
+                      "warn",
+                      `  ⚠️ Validation errors: ${statusResult.data.validationErrors.join(", ")}`,
+                    );
                   }
                   await liDelay(2000);
-                  const retry = await liInject(wv, 'checkStatus');
+                  const retry = await liInject(wv, "checkStatus");
                   if (retry.success && retry.data.applicationSent) {
                     applicationSubmitted = true;
                   }
@@ -2560,80 +2984,85 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (applicationSubmitted) {
               liAppliedCount++;
-              log('success', `✅ Applied to: ${job.title} at ${job.company}`);
+              log("success", `✅ Applied to: ${job.title} at ${job.company}`);
               // Dismiss any post-submit modal
               await liDelay(1000);
-              try { await liInject(wv, 'dismissModal'); } catch (e) { }
+              try {
+                await liInject(wv, "dismissModal");
+              } catch (e) {}
             } else {
               liFailedCount++;
-              log('warn', `❌ Could not complete application for: ${job.title}`);
+              log(
+                "warn",
+                `❌ Could not complete application for: ${job.title}`,
+              );
               // Dismiss modal to clean up
               try {
-                await liInject(wv, 'dismissModal');
+                await liInject(wv, "dismissModal");
                 await liDelay(1500);
-              } catch (e) { }
+              } catch (e) {}
             }
 
             liUpdateProgress();
 
             // Random delay between jobs
-            log('info', `⏳ Waiting ${delaySec}s before next job...`);
+            log("info", `⏳ Waiting ${delaySec}s before next job...`);
             await liRandomDelay(delaySec, delaySec + 3);
-
           } catch (error) {
             liFailedCount++;
-            log('error', `❌ Error with ${job.title}: ${error.message}`);
+            log("error", `❌ Error with ${job.title}: ${error.message}`);
             liUpdateProgress();
             // Try to dismiss any open modal
-            try { await liInject(wv, 'dismissModal'); } catch (e) { }
+            try {
+              await liInject(wv, "dismissModal");
+            } catch (e) {}
             await liDelay(2000);
           }
         }
 
         // Try next page of results
         if (liAppliedCount < limit && !liShouldStop) {
-          log('info', '📄 Advancing to next page of results...');
-          const scrollResult = await liInject(wv, 'scrollJobList');
+          log("info", "📄 Advancing to next page of results...");
+          const scrollResult = await liInject(wv, "scrollJobList");
           if (!scrollResult.success) {
-            log('warn', '⚠️ No more pages available.');
+            log("warn", "⚠️ No more pages available.");
             break;
           }
           await liDelay(3000);
         }
       }
-
     } catch (error) {
-      log('error', `❌ LinkedIn engine error: ${error.message}`);
+      log("error", `❌ LinkedIn engine error: ${error.message}`);
     } finally {
       liIsRunning = false;
       liIsPaused = false;
 
       // Reset UI
-      $('#btn-li-start').style.display = '';
-      $('#btn-li-pause').style.display = 'none';
-      $('#btn-li-stop').style.display = 'none';
+      $("#btn-li-start").style.display = "";
+      $("#btn-li-pause").style.display = "none";
+      $("#btn-li-stop").style.display = "none";
 
       const summary = `🏁 Done! Applied: ${liAppliedCount}, Skipped: ${liSkippedCount}, Failed: ${liFailedCount}`;
-      log('success', summary);
-      liUpdateProgress('Finished!');
+      log("success", summary);
+      liUpdateProgress("Finished!");
       statusText.textContent = summary;
-      toast(summary, 'success');
+      toast(summary, "success");
 
       // Save to history
       await window.api.history.add({
-        url: 'LinkedIn Easy Apply',
+        url: "LinkedIn Easy Apply",
         title: `Batch: ${liAppliedCount} applied`,
         filled: liAppliedCount,
         aiFilled: 0,
-        skipped: liSkippedCount
+        skipped: liSkippedCount,
       });
     }
   }
 
   // LinkedIn button handlers
-  $('#btn-li-start').addEventListener('click', () => {
+  $("#btn-li-start").addEventListener("click", () => {
     if (!activeTabId) {
-      toast('Open a LinkedIn job search page first!', 'warning');
+      toast("Open a LinkedIn job search page first!", "warning");
       return;
     }
     const wv = webviewContainer.querySelector(`#${activeTabId}`);
@@ -2641,9 +3070,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Verify it's LinkedIn
     try {
-      wv.executeJavaScript('window.location.hostname').then(hostname => {
-        if (!hostname.includes('linkedin.com')) {
-          toast('Navigate to LinkedIn Jobs search first!', 'warning');
+      wv.executeJavaScript("window.location.hostname").then((hostname) => {
+        if (!hostname.includes("linkedin.com")) {
+          toast("Navigate to LinkedIn Jobs search first!", "warning");
           return;
         }
         linkedinAutoApply();
@@ -2653,37 +3082,44 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  $('#btn-li-pause').addEventListener('click', () => {
+  $("#btn-li-pause").addEventListener("click", () => {
     if (liIsPaused) {
       liIsPaused = false;
-      $('#btn-li-pause').innerHTML = '<span class="material-icons-round">pause</span> Pause';
-      log('info', '▶️ LinkedIn automation resumed');
+      $("#btn-li-pause").innerHTML =
+        '<span class="material-icons-round">pause</span> Pause';
+      log("info", "▶️ LinkedIn automation resumed");
     } else {
       liIsPaused = true;
-      $('#btn-li-pause').innerHTML = '<span class="material-icons-round">play_arrow</span> Resume';
-      log('info', '⏸️ LinkedIn automation paused');
+      $("#btn-li-pause").innerHTML =
+        '<span class="material-icons-round">play_arrow</span> Resume';
+      log("info", "⏸️ LinkedIn automation paused");
     }
   });
 
-  $('#btn-li-stop').addEventListener('click', () => {
+  $("#btn-li-stop").addEventListener("click", () => {
     liShouldStop = true;
     liIsPaused = false;
-    log('info', '🛑 LinkedIn automation stopping...');
+    log("info", "🛑 LinkedIn automation stopping...");
   });
 
   // ═══ LOGGING ═══
   function log(level, msg) {
-    const el = document.createElement('div');
+    const el = document.createElement("div");
     el.className = `log-line log-${level}`;
     el.textContent = msg;
     logsScroll.appendChild(el);
     logsScroll.scrollTop = logsScroll.scrollHeight;
 
     // Switch to logs panel to show activity
-    if (level === 'error' || level === 'accent') {
-      $$('.left-panel .panel-tab').forEach(b => b.classList.toggle('active', b.dataset.panel === 'logs'));
-      $$('.left-panel .panel-content').forEach(c => c.classList.toggle('active', c.id === 'panel-logs'));
-      if (!leftPanel.classList.contains('open')) leftPanel.classList.add('open');
+    if (level === "error" || level === "accent") {
+      $$(".left-panel .panel-tab").forEach((b) =>
+        b.classList.toggle("active", b.dataset.panel === "logs"),
+      );
+      $$(".left-panel .panel-content").forEach((c) =>
+        c.classList.toggle("active", c.id === "panel-logs"),
+      );
+      if (!leftPanel.classList.contains("open"))
+        leftPanel.classList.add("open");
     }
   }
 
@@ -2691,29 +3127,39 @@ document.addEventListener('DOMContentLoaded', () => {
   function logAiAnswers(answers) {
     if (!answers || answers.length === 0) return;
 
-    const header = document.createElement('div');
-    header.className = 'log-line log-accent';
+    const header = document.createElement("div");
+    header.className = "log-line log-accent";
     header.textContent = `🤖 AI Answers (${answers.length}):`;
     logsScroll.appendChild(header);
 
-    answers.forEach(ans => {
-      const row = document.createElement('div');
-      row.className = 'log-line log-ai-answer';
-      row.style.cssText = 'display:flex;align-items:flex-start;gap:6px;background:rgba(99,102,241,0.08);border-left:3px solid #6366f1;padding:5px 8px;margin:2px 0;border-radius:0 5px 5px 0;';
+    answers.forEach((ans) => {
+      const row = document.createElement("div");
+      row.className = "log-line log-ai-answer";
+      row.style.cssText =
+        "display:flex;align-items:flex-start;gap:6px;background:rgba(99,102,241,0.08);border-left:3px solid #6366f1;padding:5px 8px;margin:2px 0;border-radius:0 5px 5px 0;";
 
-      const text = document.createElement('div');
-      text.style.cssText = 'flex:1;min-width:0;word-break:break-word;font-size:11.5px;line-height:1.4;';
-      text.innerHTML = `<span style="color:#a5b4fc;font-weight:600;">${escapeHtml(ans.label)}</span><br><span style="color:#e2e8f0;">${escapeHtml(ans.answer || '(no answer)')}</span>`;
+      const text = document.createElement("div");
+      text.style.cssText =
+        "flex:1;min-width:0;word-break:break-word;font-size:11.5px;line-height:1.4;";
+      text.innerHTML = `<span style="color:#a5b4fc;font-weight:600;">${escapeHtml(ans.label)}</span><br><span style="color:#e2e8f0;">${escapeHtml(ans.answer || "(no answer)")}</span>`;
 
-      const copyBtn = document.createElement('button');
-      copyBtn.title = 'Copy answer';
-      copyBtn.style.cssText = 'background:rgba(255,255,255,0.08);border:none;border-radius:4px;cursor:pointer;color:#94a3b8;padding:3px 5px;flex-shrink:0;font-size:12px;display:flex;align-items:center;';
-      copyBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">content_copy</span>';
+      const copyBtn = document.createElement("button");
+      copyBtn.title = "Copy answer";
+      copyBtn.style.cssText =
+        "background:rgba(255,255,255,0.08);border:none;border-radius:4px;cursor:pointer;color:#94a3b8;padding:3px 5px;flex-shrink:0;font-size:12px;display:flex;align-items:center;";
+      copyBtn.innerHTML =
+        '<span class="material-icons-round" style="font-size:13px;">content_copy</span>';
       copyBtn.onclick = () => {
-        navigator.clipboard.writeText(`Q: ${ans.label}\nA: ${ans.answer}`).then(() => {
-          copyBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">check</span>';
-          setTimeout(() => { copyBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">content_copy</span>'; }, 1500);
-        });
+        navigator.clipboard
+          .writeText(`Q: ${ans.label}\nA: ${ans.answer}`)
+          .then(() => {
+            copyBtn.innerHTML =
+              '<span class="material-icons-round" style="font-size:13px;">check</span>';
+            setTimeout(() => {
+              copyBtn.innerHTML =
+                '<span class="material-icons-round" style="font-size:13px;">content_copy</span>';
+            }, 1500);
+          });
       };
 
       row.appendChild(text);
@@ -2722,16 +3168,95 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Also show a "Copy All" button
-    const copyAllRow = document.createElement('div');
-    copyAllRow.style.cssText = 'padding:3px 8px;margin-bottom:4px;';
-    const copyAllBtn = document.createElement('button');
-    copyAllBtn.style.cssText = 'background:rgba(99,102,241,0.2);border:1px solid #6366f1;border-radius:5px;cursor:pointer;color:#a5b4fc;padding:3px 10px;font-size:11px;display:flex;align-items:center;gap:4px;';
-    copyAllBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">copy_all</span> Copy All Answers';
+    const copyAllRow = document.createElement("div");
+    copyAllRow.style.cssText = "padding:3px 8px;margin-bottom:4px;";
+    const copyAllBtn = document.createElement("button");
+    copyAllBtn.style.cssText =
+      "background:rgba(99,102,241,0.2);border:1px solid #6366f1;border-radius:5px;cursor:pointer;color:#a5b4fc;padding:3px 10px;font-size:11px;display:flex;align-items:center;gap:4px;";
+    copyAllBtn.innerHTML =
+      '<span class="material-icons-round" style="font-size:13px;">copy_all</span> Copy All Answers';
     copyAllBtn.onclick = () => {
-      const allText = answers.map(a => `Q: ${a.label}\nA: ${a.answer || '(no answer)'}`).join('\n\n');
+      const allText = answers
+        .map((a) => `Q: ${a.label}\nA: ${a.answer || "(no answer)"}`)
+        .join("\n\n");
       navigator.clipboard.writeText(allText).then(() => {
-        copyAllBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">check</span> Copied!';
-        setTimeout(() => { copyAllBtn.innerHTML = '<span class="material-icons-round" style="font-size:13px;">copy_all</span> Copy All Answers'; }, 2000);
+        copyAllBtn.innerHTML =
+          '<span class="material-icons-round" style="font-size:13px;">check</span> Copied!';
+        setTimeout(() => {
+          copyAllBtn.innerHTML =
+            '<span class="material-icons-round" style="font-size:13px;">copy_all</span> Copy All Answers';
+        }, 2000);
+      });
+    };
+    copyAllRow.appendChild(copyAllBtn);
+    logsScroll.appendChild(copyAllRow);
+    logsScroll.scrollTop = logsScroll.scrollHeight;
+  }
+
+  // Log skipped answers with copy buttons
+  function logSkippedAnswers(answers) {
+    if (!answers || answers.length === 0) return;
+
+    const header = document.createElement("div");
+    header.className = "log-line log-warn";
+    header.textContent = `⏭️ Skipped Questions (${answers.length}) - Copy answers if needed:`;
+    header.style.cssText = "color:#fbbf24;font-weight:600;";
+    logsScroll.appendChild(header);
+
+    answers.forEach((ans) => {
+      const row = document.createElement("div");
+      row.className = "log-line log-skipped-answer";
+      row.style.cssText =
+        "display:flex;align-items:flex-start;gap:6px;background:rgba(251,191,36,0.08);border-left:3px solid #fbbf24;padding:5px 8px;margin:2px 0;border-radius:0 5px 5px 0;";
+
+      const text = document.createElement("div");
+      text.style.cssText =
+        "flex:1;min-width:0;word-break:break-word;font-size:11.5px;line-height:1.4;";
+      text.innerHTML = `<span style="color:#fcd34d;font-weight:600;">${escapeHtml(ans.label)}</span><br><span style="color:#fef3c7;">${escapeHtml(ans.answer || "N/A")}</span>`;
+
+      const copyBtn = document.createElement("button");
+      copyBtn.title = "Copy answer";
+      copyBtn.style.cssText =
+        "background:rgba(255,255,255,0.08);border:none;border-radius:4px;cursor:pointer;color:#94a3b8;padding:3px 5px;flex-shrink:0;font-size:12px;display:flex;align-items:center;";
+      copyBtn.innerHTML =
+        '<span class="material-icons-round" style="font-size:13px;">content_copy</span>';
+      copyBtn.onclick = () => {
+        navigator.clipboard
+          .writeText(`Q: ${ans.label}\nA: ${ans.answer}`)
+          .then(() => {
+            copyBtn.innerHTML =
+              '<span class="material-icons-round" style="font-size:13px;">check</span>';
+            setTimeout(() => {
+              copyBtn.innerHTML =
+                '<span class="material-icons-round" style="font-size:13px;">content_copy</span>';
+            }, 1500);
+          });
+      };
+
+      row.appendChild(text);
+      row.appendChild(copyBtn);
+      logsScroll.appendChild(row);
+    });
+
+    // Also show a "Copy All Skipped" button
+    const copyAllRow = document.createElement("div");
+    copyAllRow.style.cssText = "padding:3px 8px;margin-bottom:4px;";
+    const copyAllBtn = document.createElement("button");
+    copyAllBtn.style.cssText =
+      "background:rgba(251,191,36,0.2);border:1px solid #fbbf24;border-radius:5px;cursor:pointer;color:#fcd34d;padding:3px 10px;font-size:11px;display:flex;align-items:center;gap:4px;";
+    copyAllBtn.innerHTML =
+      '<span class="material-icons-round" style="font-size:13px;">copy_all</span> Copy All Skipped';
+    copyAllBtn.onclick = () => {
+      const allText = answers
+        .map((a) => `Q: ${a.label}\nA: ${a.answer || "N/A"}`)
+        .join("\n\n");
+      navigator.clipboard.writeText(allText).then(() => {
+        copyAllBtn.innerHTML =
+          '<span class="material-icons-round" style="font-size:13px;">check</span> Copied!';
+        setTimeout(() => {
+          copyAllBtn.innerHTML =
+            '<span class="material-icons-round" style="font-size:13px;">copy_all</span> Copy All Skipped';
+        }, 2000);
       });
     };
     copyAllRow.appendChild(copyAllBtn);
@@ -2740,41 +3265,47 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateStats() {
-    $('#status-filled').textContent = `Filled: ${totalFilled}`;
-    $('#status-ai').textContent = `AI: ${totalAI}`;
-    $('#status-skipped').textContent = `Skipped: ${totalSkipped}`;
+    $("#status-filled").textContent = `Filled: ${totalFilled}`;
+    $("#status-ai").textContent = `AI: ${totalAI}`;
+    $("#status-skipped").textContent = `Skipped: ${totalSkipped}`;
   }
 
   // ═══ TABS PERSISTENCE ═══
   async function saveTabs() {
-    const data = tabs.map(t => ({ title: t.title, url: t.url }));
+    const data = tabs.map((t) => ({ title: t.title, url: t.url }));
     await window.api.tabs.save(data);
   }
 
   async function loadSavedTabs() {
     const saved = await window.api.tabs.getAll();
     if (saved && saved.length > 0) {
-      saved.forEach(t => createTab(t.url, t.title || 'Tab'));
+      saved.forEach((t) => createTab(t.url, t.title || "Tab"));
     }
   }
 
   // ═══ TOAST ═══
-  function toast(message, type = 'info') {
-    const icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
-    const el = document.createElement('div');
+  function toast(message, type = "info") {
+    const icons = {
+      success: "check_circle",
+      error: "error",
+      warning: "warning",
+      info: "info",
+    };
+    const el = document.createElement("div");
     el.className = `toast toast-${type}`;
     el.innerHTML = `<span class="material-icons-round">${icons[type]}</span><span>${escapeHtml(message)}</span>`;
-    $('#toast-container').appendChild(el);
+    $("#toast-container").appendChild(el);
     setTimeout(() => {
-      el.style.opacity = '0'; el.style.transform = 'translateX(30px)';
-      el.style.transition = 'all 0.3s';
+      el.style.opacity = "0";
+      el.style.transform = "translateX(30px)";
+      el.style.transition = "all 0.3s";
       setTimeout(() => el.remove(), 300);
     }, 4000);
   }
 
   function escapeHtml(s) {
-    if (!s) return '';
-    const d = document.createElement('div');
+    if (!s) return "";
+    const d = document.createElement("div");
     d.textContent = String(s);
     return d.innerHTML;
   }
@@ -2789,7 +3320,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (activeTabId) {
           const wv = webviewContainer.querySelector(`#${activeTabId}`);
           if (wv) {
-            try { wv.focus(); } catch (e) { }
+            try {
+              wv.focus();
+            } catch (e) {}
           }
         }
       }
@@ -2797,10 +3330,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Fires when the user clicks back into the Electron window from another OS window
-  window.addEventListener('focus', dismissAddressBarFocus);
+  window.addEventListener("focus", dismissAddressBarFocus);
 
   // Fires when page becomes visible again (e.g. switching virtual desktops / monitors)
-  document.addEventListener('visibilitychange', () => {
+  document.addEventListener("visibilitychange", () => {
     if (!document.hidden) dismissAddressBarFocus();
   });
 
@@ -2812,22 +3345,26 @@ document.addEventListener('DOMContentLoaded', () => {
     await loadSavedTabs();
 
     // Pre-load injector scripts
-    try { injectorScript = await window.api.engine.getInjectorScript(); } catch (e) { }
-    try { liInjectorScript = await window.api.engine.getLinkedInInjector(); } catch (e) { }
+    try {
+      injectorScript = await window.api.engine.getInjectorScript();
+    } catch (e) {}
+    try {
+      liInjectorScript = await window.api.engine.getLinkedInInjector();
+    } catch (e) {}
 
     // If no tabs, show shortcuts
-    if (tabs.length === 0) shortcutsPage.classList.add('active');
+    if (tabs.length === 0) shortcutsPage.classList.add("active");
 
     // Open left panel by default on first launch
     if (!profile.firstName && !profile.fullName) {
-      leftPanel.classList.add('open');
+      leftPanel.classList.add("open");
     }
     // Listen for new tab creation requests from main process
     if (window.api.tabs && window.api.tabs.onTabCreate) {
       window.api.tabs.onTabCreate((newTab) => {
-        console.log('📂 Creating tab from main process:', newTab.url);
-        createTab(newTab.url, newTab.title || 'Loading...');
-        toast('Opened in new tab', 'success');
+        console.log("📂 Creating tab from main process:", newTab.url);
+        createTab(newTab.url, newTab.title || "Loading...");
+        toast("Opened in new tab", "success");
       });
     }
   }

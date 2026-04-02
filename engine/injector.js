@@ -26,10 +26,15 @@
   const isGoogleForm = window.location.hostname.includes('docs.google.com') &&
                         window.location.pathname.includes('/forms/');
 
-  // Detect Turing job interest form
+  // Detect Turing job interest form (old ant-design based)
   const isTuringForm = (window.location.hostname.includes('turing.com') ||
                         window.location.hostname.includes('developers.turing.com')) &&
                        document.querySelector('.job-interest-form') !== null;
+
+  // Detect new work.turing.com Radix UI dialog form
+  const isWorkTuringForm = window.location.hostname.includes('turing.com') &&
+                           !!document.querySelector('[data-slot="dialog-panel"]') &&
+                           !!document.querySelector('[data-slot="card-title"]');
 
   // Detect Wellfound (AngelList Talent) job application modal
   // The modal may or may not carry data-test="JobApplication-Modal" — check multiple indicators.
@@ -1126,9 +1131,206 @@
     }
   }
 
+  // ═══ RADIX UI WORK.TURING.COM FORM HANDLER ═══
+  function handleWorkTuringForm() {
+    // The dialog panel contains all the question cards
+    const dialog = document.querySelector('[data-slot="dialog-panel"]');
+    if (!dialog) {
+      result.errors.push('Work Turing: dialog panel not found.');
+      return;
+    }
+
+    // Each question is wrapped in a [data-slot="card"]
+    const cards = dialog.querySelectorAll('[data-slot="card"]');
+    if (cards.length === 0) {
+      result.errors.push('Work Turing: no question cards found.');
+      return;
+    }
+
+    const processedLabels = new Set();
+
+    cards.forEach((card, idx) => {
+      try {
+        // ── Get question label ──────────────────────────────────────────────
+        // Prefer [data-slot="card-title"] (cards 1-6); fall back to first <label>
+        // (cards 7-15 use <label data-slot="label"> wrapping the textarea).
+        const titleEl = card.querySelector('[data-slot="card-title"]') ||
+                        card.querySelector('label[data-slot="label"]') ||
+                        card.querySelector('label');
+        if (!titleEl) return;
+
+        // Clone so we can strip inline asterisk spans without mutating the page
+        const cloneTitle = titleEl.cloneNode(true);
+        cloneTitle.querySelectorAll('.text-destructive, [aria-hidden="true"]').forEach(n => n.remove());
+        let label = cloneTitle.textContent.trim().replace(/\s+/g, ' ').replace(/\*+$/, '').trim();
+        if (!label || processedLabels.has(label)) return;
+        processedLabels.add(label);
+
+        const isRequired = !!card.querySelector('.text-destructive, [aria-required="true"]');
+
+        // ── Radix Radio Group ────────────────────────────────────────────────
+        // <button role="radio" data-slot="radio-group-item">
+        // Radios are ALWAYS the only interactive widget in their card.
+        const radioButtons = card.querySelectorAll('button[role="radio"][data-slot="radio-group-item"]');
+        if (radioButtons.length > 0) {
+          const options = Array.from(radioButtons).map(btn => {
+            let lblText = '';
+            const btnId = btn.id;
+            if (btnId) {
+              try {
+                const lbl = card.querySelector('label[for="' + CSS.escape(btnId) + '"]');
+                if (lbl) lblText = lbl.textContent.trim();
+              } catch(e) {}
+            }
+            if (!lblText) {
+              let sib = btn.nextElementSibling;
+              while (sib) {
+                if (sib.tagName === 'LABEL') { lblText = sib.textContent.trim(); break; }
+                sib = sib.nextElementSibling;
+              }
+            }
+            if (!lblText) lblText = btn.getAttribute('value') || btn.textContent.trim();
+            return { text: lblText, value: btn.getAttribute('value') || lblText, element: btn };
+          });
+
+          const lowerLabel = label.toLowerCase();
+          // Auto-answer known yes/no questions
+          const isAutoYes = lowerLabel.includes('are you interested') ||
+                            lowerLabel.includes('can you overlap');
+          if (isAutoYes) {
+            const yesOpt = options.find(o =>
+              o.text.toLowerCase().includes('yes') || o.value.toLowerCase() === 'yes'
+            ) || options[0];
+            if (yesOpt) {
+              yesOpt.element.scrollIntoView({ behavior: 'instant', block: 'center' });
+              yesOpt.element.click();
+              result.filledCount++;
+            }
+            return; // radios are exclusive in their card
+          }
+
+          const matchedValue = matchField({ label, name: '' });
+          if (matchedValue) {
+            const mv = matchedValue.toString().toLowerCase().trim();
+            const match = options.find(o =>
+              o.text.toLowerCase() === mv ||
+              o.text.toLowerCase().includes(mv) ||
+              mv.includes(o.text.toLowerCase()) ||
+              o.value.toLowerCase() === mv
+            ) || options[0];
+            if (match) {
+              match.element.scrollIntoView({ behavior: 'instant', block: 'center' });
+              match.element.click();
+              result.filledCount++;
+            }
+          } else {
+            result.unknownFields.push({
+              label, type: 'radix-radio',
+              options: options.map(o => o.text),
+              optionValues: options.map(o => o.value),
+              selector: '', name: '',
+              required: isRequired,
+              isWorkTuring: true, cardIndex: idx
+            });
+          }
+          return; // radios are always exclusive
+        }
+
+        // ── Textarea / Text Input ────────────────────────────────────────────
+        // Process text widget FIRST so mixed cards (e.g. URL input + checkbox)
+        // have the input captured before the checkbox scan.
+        const textarea = card.querySelector('textarea[data-slot="textarea"], textarea');
+        const textInput = !textarea && card.querySelector(
+          'input[type="text"], input[type="url"], input[type="email"]'
+        );
+        const mainWidget = textarea || textInput;
+
+        if (mainWidget) {
+          const widgetType = mainWidget.tagName === 'TEXTAREA' ? 'textarea' : (mainWidget.type || 'text');
+          if (!OVERWRITE && mainWidget.value && mainWidget.value.trim() !== '') {
+            result.skippedFields.push({ label, reason: 'Already filled' });
+          } else {
+            const matchedValue = matchField({ label, name: mainWidget.name || '' });
+            if (matchedValue && matchedValue.toString().trim()) {
+              safeSetValue(mainWidget, matchedValue.toString());
+              result.filledCount++;
+            } else {
+              result.unknownFields.push({
+                label, type: widgetType, options: [],
+                selector: mainWidget.id ? '#' + CSS.escape(mainWidget.id) : '',
+                name: mainWidget.name || '',
+                required: isRequired,
+                isWorkTuring: true, cardIndex: idx
+              });
+            }
+          }
+        }
+
+        // ── Radix Checkboxes ─────────────────────────────────────────────────
+        // ALWAYS scanned even when mainWidget was found (mixed cards like card 2).
+        // <button role="checkbox" data-slot="checkbox">
+        const checkboxButtons = card.querySelectorAll('button[role="checkbox"][data-slot="checkbox"]');
+        checkboxButtons.forEach(btn => {
+          const alreadyChecked = btn.getAttribute('aria-checked') === 'true' ||
+                                 btn.getAttribute('data-state') === 'checked';
+          if (alreadyChecked) return;
+
+          let cbLabel = '';
+          const btnId = btn.id;
+          if (btnId) {
+            try {
+              const lbl = card.querySelector('label[for="' + CSS.escape(btnId) + '"]');
+              if (lbl) cbLabel = lbl.textContent.trim();
+            } catch(e) {}
+          }
+          if (!cbLabel) cbLabel = label;
+
+          const cbLower = (cbLabel + ' ' + label).toLowerCase();
+
+          // Guard: never auto-check "I don't have..." type disclaimers
+          const isDisavowal = /don[`']?t have|do not have|i don[`']?t|i do not/.test(cbLower);
+
+          // Auto-check consent / confirmation boxes (unless disavowal)
+          const isConsent = !isDisavowal && [
+            'confirm', 'agree', 'accept', 'correct', 'acknowledge',
+            'terms', 'privacy', 'data', 'availability'
+          ].some(p => cbLower.includes(p));
+
+          if (isConsent) {
+            btn.scrollIntoView({ behavior: 'instant', block: 'center' });
+            btn.click();
+            result.filledCount++;
+          } else if (!isDisavowal) {
+            // Unknown non-consent, non-disavowal → ask AI
+            result.unknownFields.push({
+              label: cbLabel || label,
+              type: 'radix-checkbox',
+              options: ['Yes', 'No'],
+              selector: '', name: '',
+              required: isRequired,
+              isWorkTuring: true, cardIndex: idx
+            });
+          }
+          // isDisavowal → intentionally left unchecked
+        });
+
+        // If nothing at all was handled, and there were no radios/textareas/inputs/
+        // checkboxes — skip silently (e.g. the timezone or rate cards).
+
+      } catch (err) {
+        result.errors.push('Work Turing card ' + (idx + 1) + ': ' + err.message);
+      }
+    });
+
+
+    result.submittable = !!dialog.querySelector('button[type="submit"]');
+  }
+
   // ═══ MAIN EXECUTION ═══
   if (isGoogleForm) {
     handleGoogleForm();
+  } else if (isWorkTuringForm) {
+    handleWorkTuringForm();
   } else if (isTuringForm) {
     handleTuringForm();
   } else if (isWellfound) {

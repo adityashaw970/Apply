@@ -2001,6 +2001,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (setter) setter.call(el, value);
             else el.value = value;
           } catch(e) { el.value = value; }
+          // Reset React's _valueTracker so React sees the programmatic change
+          const tracker = el._valueTracker;
+          if (tracker) { tracker.setValue(''); }
           el.dispatchEvent(new Event('input', {bubbles:true}));
           el.dispatchEvent(new Event('change', {bubbles:true}));
           el.dispatchEvent(new Event('blur', {bubbles:true}));
@@ -2012,9 +2015,17 @@ document.addEventListener("DOMContentLoaded", () => {
           el.removeAttribute('disabled');
           el.removeAttribute('readonly');
           safeSet(el, value);
-          // Also trigger a simulated keyboard event so React's onChange fires
-          el.dispatchEvent(new KeyboardEvent('keydown', {bubbles:true, key:'a'}));
-          el.dispatchEvent(new KeyboardEvent('keyup', {bubbles:true, key:'a'}));
+          // Reset React's internal _valueTracker so React sees the change
+          const tracker = el._valueTracker;
+          if (tracker) { tracker.setValue(''); }
+          // Re-dispatch input so React's onChange fires after tracker reset
+          el.dispatchEvent(new Event('input', {bubbles:true}));
+          el.dispatchEvent(new Event('change', {bubbles:true}));
+          // Simulate keyboard events for React's synthetic event system
+          el.dispatchEvent(new KeyboardEvent('keydown', {bubbles:true, key:'a', keyCode:65}));
+          el.dispatchEvent(new KeyboardEvent('keypress', {bubbles:true, key:'a', keyCode:65}));
+          el.dispatchEvent(new KeyboardEvent('keyup', {bubbles:true, key:'a', keyCode:65}));
+          el.dispatchEvent(new Event('blur', {bubbles:true}));
         }
 
         for (const ans of answers) {
@@ -2152,7 +2163,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
             } else if (isWellfound || ans.isWellfound) {
               // ── Wellfound modal: find the textarea by name or selector ──
-              const modal = document.querySelector('[data-test="JobApplication-Modal"]');
+              const modal = document.querySelector('[data-test="JobApplication-Modal"]') ||
+                            document.querySelector('[class*="styles_modal__"]') ||
+                            document.querySelector('[data-test="JobApplicationModal--SubmitButton"]')?.closest('[class*="styles_modal__"]') ||
+                            document.querySelector('.ReactModal__Content');
               let fieldEl = null;
 
               // Try by name attribute first (most reliable for Wellfound)

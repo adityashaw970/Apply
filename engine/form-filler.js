@@ -85,13 +85,20 @@ class FormFiller {
     // CONTEXTUAL: If field contains keywords that ONLY appear in work experience context
     // "Company" or "Description" are only work-related in work experience repeating sections
     // But in form-filler.js context, we can infer from label patterns
-    if (label.includes("for ") && label.includes("company")) {
-      // "worked for X company"
-      return true;
-    }
+    // EXCLUDE interest/motivation questions like "What interests you about working for this company?"
+    const isInterestQuestion = label.includes("interest") || label.includes("why") ||
+      label.includes("motivat") || label.includes("excit") || label.includes("passion") ||
+      label.includes("what draws") || label.includes("about working");
 
-    if (label.includes("company you") || label.includes("company where")) {
-      return true;
+    if (!isInterestQuestion) {
+      if (label.includes("for ") && label.includes("company")) {
+        // "worked for X company"
+        return true;
+      }
+
+      if (label.includes("company you") || label.includes("company where")) {
+        return true;
+      }
     }
 
     // DO NOT use weak indicators like just "company", just "city", just "description"

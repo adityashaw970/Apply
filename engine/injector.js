@@ -66,6 +66,12 @@
         // Fallback: direct assignment
         el.value = value;
       }
+      // Reset React's internal _valueTracker so React sees the programmatic change
+      // Without this, React's onChange never fires for controlled components
+      const tracker = el._valueTracker;
+      if (tracker) {
+        tracker.setValue('');
+      }
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
       el.dispatchEvent(new Event('blur', { bubbles: true }));
@@ -1109,7 +1115,7 @@
   // Helper: force-fill a Wellfound field (handles disabled React-controlled inputs)
   function wellfoundFill(el, value) {
     try {
-      // Remove disabled attribute so we can interact with it
+      // Remove disabled / readonly so we can interact
       el.removeAttribute('disabled');
       el.removeAttribute('readonly');
 
@@ -1122,9 +1128,22 @@
         el.value = value;
       }
 
+      // ── Critical: Reset React's internal _valueTracker ──
+      // React 16+ attaches a tracker to each controlled input. If the tracker's
+      // last-known value matches el.value, React swallows the 'input' event and
+      // onChange never fires. Resetting the tracker forces React to see the change.
+      const tracker = el._valueTracker;
+      if (tracker) {
+        tracker.setValue('');   // set to anything different from the new value
+      }
+
       el.focus();
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      // Simulate keyboard activity so React's synthetic event system fires
+      el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'a', keyCode: 65 }));
+      el.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: 'a', keyCode: 65 }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a', keyCode: 65 }));
       el.dispatchEvent(new Event('blur', { bubbles: true }));
     } catch (e) {
       el.value = value;

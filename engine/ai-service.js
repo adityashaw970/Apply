@@ -736,7 +736,7 @@ class AIService {
     prompt +=
       "⚠️ CRITICAL: Each question MUST receive a UNIQUE answer tailored to THAT specific question.\n";
     prompt += "Never give the same answer to two different questions.\n";
-    prompt += `- "What interests you about this company?" → Answer EXACTLY: "I am excited about ${jobCompany || "this company"} because of the opportunity to work on innovative digital products and grow my skills in ${skillsStr}. With ${p.experience ? (String(p.experience).toLowerCase().includes("year") ? p.experience : p.experience + " years") + " of experience" : "relevant experience"}, I believe I can contribute effectively to the team while learning from a dynamic environment."\n`;
+    prompt += `- "What interests you about this company?" → Answer EXACTLY: "I am excited about ${jobCompany || "this company"} because of the opportunity to work on innovative digital products and grow my skills in ${skillsStr}. ${p.experience ? `With ${String(p.experience).toLowerCase().includes("year") ? p.experience : p.experience + " years"} of experience, I believe I can contribute effectively to the team while learning from a dynamic environment.` : `As an enthusiastic learner with a strong foundation in ${skillsStr}, I am eager to contribute to the team and grow in a dynamic environment.`}"\n`;
     prompt +=
       '- "What is your experience with X?" → Specific experience/years answer\n';
     prompt +=
@@ -1046,7 +1046,7 @@ class AIService {
       ? (experienceText.toLowerCase().includes("year")
           ? experienceText
           : `${experienceText} years`) + " of experience"
-      : "relevant experience";
+      : "";
     const about = p.aboutMe || p.whyHire || "";
 
     // "What interests you..." / "Why do you want to work here..." / "Why this company..."
@@ -1062,10 +1062,9 @@ class AIService {
       if (about) {
         return about.substring(0, 500);
       }
-      return (
-        `I am excited about ${company} because of the opportunity to work on innovative digital products and grow my skills in ${skills}. ` +
-        `With ${experience}, I believe I can contribute effectively to the team while learning from a dynamic environment.`
-      );
+      return experience
+        ? `I am excited about ${company} because of the opportunity to work on innovative digital products and grow my skills in ${skills}. With ${experience}, I believe I can contribute effectively to the team while learning from a dynamic environment.`
+        : `I am excited about ${company} because of the opportunity to work on innovative digital products and grow my skills in ${skills}. As an enthusiastic learner with a strong foundation in ${skills}, I am eager to contribute to the team and grow in a dynamic environment.`;
     }
 
     // "Tell us about yourself" / "Describe yourself" / "About you"
@@ -1080,8 +1079,11 @@ class AIService {
       const degree = p.degree
         ? `${p.degree} in ${p.branch || "Computer Science"}`
         : "a technical background";
+      const expPart = experience
+        ? `with ${experience} in ${skills}`
+        : `with a strong foundation in ${skills}`;
       return (
-        `I am ${fullName || "a developer"} with ${experience} in ${skills}. ` +
+        `I am ${fullName || "a developer"} ${expPart}. ` +
         `I hold ${degree} from ${p.collegeName || "a reputed institution"}. ` +
         `I am passionate about building impactful products and am eager to contribute to ${company}.`
       );
@@ -1096,7 +1098,9 @@ class AIService {
     ) {
       return (
         p.whyHire ||
-        `My key strengths are ${skills}. I am a quick learner with ${experience}, and I am committed to delivering quality work. I thrive in collaborative environments and am passionate about ${jobTitle}.`
+        (experience
+          ? `My key strengths are ${skills}. I am a quick learner with ${experience}, and I am committed to delivering quality work. I thrive in collaborative environments and am passionate about ${jobTitle}.`
+          : `My key strengths are ${skills}. I am a quick learner and am committed to delivering quality work. I thrive in collaborative environments and am passionate about ${jobTitle}.`)
       );
     }
 
@@ -1215,12 +1219,19 @@ class AIService {
     }
 
     // CONTEXTUAL: Patterns that only appear in work experience
-    if (label.includes("for ") && label.includes("company")) {
-      return true;
-    }
+    // EXCLUDE interest/motivation questions like "What interests you about working for this company?"
+    const isInterestQuestion = label.includes("interest") || label.includes("why") ||
+      label.includes("motivat") || label.includes("excit") || label.includes("passion") ||
+      label.includes("what draws") || label.includes("about working");
 
-    if (label.includes("company you") || label.includes("company where")) {
-      return true;
+    if (!isInterestQuestion) {
+      if (label.includes("for ") && label.includes("company")) {
+        return true;
+      }
+
+      if (label.includes("company you") || label.includes("company where")) {
+        return true;
+      }
     }
   }
 

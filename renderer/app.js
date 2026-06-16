@@ -233,7 +233,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // Create webview
     const wv = document.createElement("webview");
     wv.id = id;
-    wv.setAttribute("src", url || "about:blank");
+    if (url) {
+      wv.setAttribute("src", url);
+    }
     wv.setAttribute("allowpopups", "");
     wv.setAttribute("webpreferences", "nativeWindowOpen=no");
     wv.setAttribute("partition", "persist:massapply");
@@ -245,6 +247,13 @@ document.addEventListener("DOMContentLoaded", () => {
     );
     wv.style.width = "100%";
     wv.style.height = "100%";
+
+    // *** FIX: Prevent Chromium webview suspension bug ***
+    // We must ensure the webview is inserted into the DOM with display: flex
+    // If it is inserted as display: none and synchronously changed to flex, 
+    // the guest instance will silently hang until the next visibility cycle.
+    wv.classList.add("active");
+    webviewContainer.querySelectorAll("webview").forEach(w => w.classList.remove("active"));
 
     // *** CRITICAL: Attach new-window handler BEFORE appending to DOM ***
     wv.addEventListener("new-window", (e) => {
@@ -304,23 +313,23 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    // Run stealth scripts as early as possible
+    // Update loading state
     wv.addEventListener("did-start-loading", () => {
       updateTabLoading(id, true);
-      wv.executeJavaScript(`
+    });
+
+    // Inject stealth scripts, window.open interceptor, and context menu after DOM is ready
+    wv.addEventListener("dom-ready", () => {
+      wv.isReadyForImperative = true;
+      wv.executeJavaScript(
+        `
     try {
       Object.defineProperty(navigator, 'webdriver', { get: () => false });
       Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
       Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
       window.chrome = window.chrome || { runtime: {} };
     } catch(e) {}
-  `);
-    });
 
-    // Inject window.open interceptor + context menu after DOM is ready
-    wv.addEventListener("dom-ready", () => {
-      wv.executeJavaScript(
-        `
     (function() {
       // Intercept window.open calls
       const originalOpen = window.open;
@@ -532,13 +541,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (activeTabId) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
+        
         if (wv) {
-          // loadURL() is imperative and fires immediately.
-          // wv.src = url is declarative — Electron processes it asynchronously
-          // through the attribute-change cycle, causing the visible lag.
-          wv.loadURL(url);
+          if (wv.isReadyForImperative) {
+            wv.loadURL(url).catch(err => console.warn("loadURL rejected:", err));
+          } else {
+            // Webview has no initial src, so it's not booting anything.
+            // Setting src directly will cleanly initiate the very first navigation!
+            wv.setAttribute("src", url);
+          }
           const tab = tabs.find((t) => t.id === activeTabId);
           if (tab) tab.url = url;
+          
+          // *** THE TRUE BUG FIX ***
+          // Hide the shortcuts overlay so the newly navigating webview is visible
+          shortcutsPage.classList.remove("active");
+          
           saveTabs();
         }
       } else {

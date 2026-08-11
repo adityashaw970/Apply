@@ -1086,8 +1086,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Reload the webview to start fresh
         try {
-          if (wv && typeof wv.reload === "function") {
-            wv.reload();
+          const activeWv = activeTabId ? webviewContainer.querySelector(`#${activeTabId}`) : null;
+          if (activeWv && typeof activeWv.reload === "function") {
+            activeWv.reload();
           }
         } catch (err) {
           console.log("Error reloading webview:", err);
@@ -1277,11 +1278,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (isBlank) {
         const wv = webviewContainer.querySelector(`#${activeTabId}`);
         if (wv) {
-          // Use loadURL (imperative) instead of wv.src (declarative/async) for instant navigation
-          if (typeof wv.loadURL === "function") {
-            wv.loadURL(url);
+          if (wv.isReadyForImperative) {
+            wv.loadURL(url).catch(err => console.warn("loadURL rejected:", err));
           } else {
-            wv.src = url;
+            wv.setAttribute("src", url);
           }
         }
         tab.url = url;
@@ -2577,11 +2577,13 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const wv = webviewContainer.querySelector(`#${activeTabId}`);
+    let wv = webviewContainer.querySelector(`#${activeTabId}`);
     if (!wv) {
       toast("Open LinkedIn job search first!", "error");
       return;
     }
+    // Track the LinkedIn search-results tab so we can return to it later
+    const liSearchTabId = activeTabId;
 
     const limit = parseInt($("#li-apply-limit").value) || 25;
     const delaySec = parseInt($("#li-delay").value) || 5;
@@ -2697,8 +2699,33 @@ document.addEventListener("DOMContentLoaded", () => {
               continue;
             }
 
-            // Wait for modal to open
-            await liDelay(2000);
+            // ── Resolve which webview actually has the application form ──────────────
+            // When LinkedIn's Easy Apply button is an <a href> link, Electron's
+            // new-window handler intercepts it, creates a NEW tab and switches
+            // activeTabId. The form is in the NEW tab's webview, not the old one.
+            // We must update wv to point to the correct webview before injecting.
+            {
+              const newActiveWv = webviewContainer.querySelector(`#${activeTabId}`);
+              if (newActiveWv && newActiveWv !== wv) {
+                log("info", "  📑 Detected new tab for application — switching webview");
+                wv = newActiveWv;
+              }
+            }
+
+            // ── Wait for the Easy Apply modal using MutationObserver inside the page ──
+            // waitForModal runs INSIDE the LinkedIn webview, watching the DOM directly.
+            // Electron awaits the returned Promise, so we get an instant response.
+            log("info", "  ⏳ Waiting for Easy Apply modal...");
+            const waitResult = await liInject(wv, "waitForModal", { maxWait: 20000 });
+            if (!waitResult.success) {
+              const diag = waitResult.data ? JSON.stringify(waitResult.data) : "";
+              log("warn", `  ⚠️ Modal never appeared — skipping${diag ? " [" + diag + "]" : ""}`);
+              liSkippedCount++;
+              liUpdateProgress();
+              continue;
+            }
+            log("info", `  ✅ Modal ready (${waitResult.data?.waitedMs ?? 0}ms)`);
+            await liDelay(400); // let Ember finish rendering all form fields
 
             // Get job description ONCE before filling steps (plain text)
             let jobDescText = "";
@@ -2742,12 +2769,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
               log("info", `  📄 Step ${stepCount} — Filling form fields...`);
 
-              // Fill current step
-              const fillResult = await liInject(wv, "fillStep");
+              // Fill current step fresh each time
+              let currentFillResult = await liInject(wv, "fillStep");
 
-              if (!fillResult.success) {
-                if (fillResult.error === "NO_MODAL_FOUND") {
-                  log("info", "  Modal closed, checking status...");
+              if (!currentFillResult.success && currentFillResult.error === "NO_MODAL_FOUND") {
+                // Modal might still be transitioning — retry up to 8 times
+                for (let r = 0; r < 8; r++) {
+                  await liDelay(1000);
+                  const retryFill = await liInject(wv, "fillStep");
+                  if (retryFill.success) {
+                    currentFillResult = retryFill;
+                    break;
+                  }
+                }
+              }
+
+              if (!currentFillResult.success) {
+                if (currentFillResult.error === "NO_MODAL_FOUND") {
+                  const diag = currentFillResult.data && currentFillResult.data.diagnostic;
+                  log(
+                    "info",
+                    `  Modal closed, checking status...${diag ? ` [${diag}]` : ""}`,
+                  );
                   await liDelay(1000);
                   const statusResult = await liInject(wv, "checkStatus");
                   if (
@@ -2758,11 +2801,11 @@ document.addEventListener("DOMContentLoaded", () => {
                   }
                   break;
                 }
-                log("warn", `  ⚠️ Fill error: ${fillResult.error}`);
+                log("warn", `  ⚠️ Fill error: ${currentFillResult.error}`);
                 break;
               }
 
-              const stepData = fillResult.data;
+              const stepData = currentFillResult.data;
               const profileFilled = stepData.filledFields.filter(
                 (f) => f.source === "profile",
               ).length;
@@ -2974,7 +3017,6 @@ document.addEventListener("DOMContentLoaded", () => {
                   liIsPaused = true;
                   $("#btn-li-pause").innerHTML =
                     '<span class="material-icons-round">play_arrow</span> Resume';
-                  // Show alert popup — user must click OK
                   alert(
                     `⚠️ STUCK: "Review" button has been clicked ${MAX_CONSECUTIVE_REVIEWS} times in a row without progress.\n\nPlease check this application manually in the browser, then click OK and Resume to continue.`,
                   );
@@ -2990,7 +3032,7 @@ document.addEventListener("DOMContentLoaded", () => {
               }
 
               if (nextResult.data.clicked === "submit") {
-                await liDelay(3000);
+                await liDelay(2500);
                 const statusResult = await liInject(wv, "checkStatus");
                 if (statusResult.success && statusResult.data.applicationSent) {
                   applicationSubmitted = true;
@@ -3007,7 +3049,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     applicationSubmitted = true;
                   }
                 }
-                break;
+                if (applicationSubmitted) break;
               }
 
               // Wait for next step to load
@@ -3037,6 +3079,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
             liUpdateProgress();
 
+            // ── Restore wv to the search-results tab for the next job ──────────────
+            // If LinkedIn opened the form in a new tab, we must close that tab
+            // and switch back to the search results so the next job can be clicked.
+            if (activeTabId !== liSearchTabId) {
+              log("info", "  🔙 Closing application tab, returning to job search...");
+              try {
+                const appTabId = activeTabId;
+                closeTab(appTabId);         // removes webview + tab button, auto-switches
+                switchTab(liSearchTabId);   // force back to search tab
+              } catch (e) {}
+              wv = webviewContainer.querySelector(`#${liSearchTabId}`) || wv;
+            }
+
             // Random delay between jobs
             log("info", `⏳ Waiting ${delaySec}s before next job...`);
             await liRandomDelay(delaySec, delaySec + 3);
@@ -3048,6 +3103,15 @@ document.addEventListener("DOMContentLoaded", () => {
             try {
               await liInject(wv, "dismissModal");
             } catch (e) {}
+            // Restore to search-results tab on error too
+            if (activeTabId !== liSearchTabId) {
+              try {
+                const errTabId = activeTabId;
+                closeTab(errTabId);
+                switchTab(liSearchTabId);
+              } catch (e) {}
+              wv = webviewContainer.querySelector(`#${liSearchTabId}`) || wv;
+            }
             await liDelay(2000);
           }
         }
@@ -3132,6 +3196,265 @@ document.addEventListener("DOMContentLoaded", () => {
     liShouldStop = true;
     liIsPaused = false;
     log("info", "🛑 LinkedIn automation stopping...");
+  });
+
+  // ═══ BUMBLE AUTO SWIPE ENGINE (v3 — native input injection) ═══
+  let bumbleIsRunning = false;
+  let bumbleIsPaused  = false;
+  let bumbleShouldStop = false;
+  let bumbleLikedCount = 0;
+  let bumbleFailedCount = 0;
+
+  async function bumbleDelay(ms) {
+    await new Promise(r => setTimeout(r, ms));
+  }
+  async function bumbleWaitIfPaused() {
+    while (bumbleIsPaused && !bumbleShouldStop) await bumbleDelay(300);
+  }
+
+  function bumbleUpdateProgress(status) {
+    const limit = parseInt($("#bumble-limit").value) || 100;
+    $("#bumble-liked-count").textContent  = bumbleLikedCount;
+    $("#bumble-failed-count").textContent = bumbleFailedCount;
+    $("#bumble-progress-bar").style.width = Math.min(Math.round((bumbleLikedCount / limit) * 100), 100) + "%";
+    if (status) $("#bumble-current-status").textContent = status;
+    statusText.textContent = `Bumble: ${bumbleLikedCount}/${limit} liked`;
+  }
+
+  async function bumbleAutoLike() {
+    if (bumbleIsRunning) { toast("Already running!", "warning"); return; }
+
+    const wv = webviewContainer.querySelector(`#${activeTabId}`);
+    if (!wv) { toast("Open Bumble encounters page first!", "error"); return; }
+
+    const limit    = parseInt($("#bumble-limit").value)     || 100;
+    const minDelay = parseFloat($("#bumble-min-delay").value) || 1.5;
+    const maxDelay = parseFloat($("#bumble-max-delay").value) || 3.0;
+
+    bumbleIsRunning   = true;
+    bumbleShouldStop  = false;
+    bumbleIsPaused    = false;
+    bumbleLikedCount  = 0;
+    bumbleFailedCount = 0;
+
+    $("#btn-bumble-start").style.display    = "none";
+    $("#btn-bumble-pause").style.display    = "";
+    $("#btn-bumble-stop").style.display     = "";
+    $("#bumble-progress-section").style.display = "";
+    leftPanel.classList.add("open");
+
+    log("accent", "🚀 Bumble Auto-Liker v3 started (native click mode)");
+    log("info", `Target: ${limit} likes | delay: ${minDelay}–${maxDelay}s`);
+    bumbleUpdateProgress("Finding like button...");
+
+    try {
+      while (bumbleLikedCount < limit && !bumbleShouldStop) {
+        await bumbleWaitIfPaused();
+        if (bumbleShouldStop) break;
+
+        // ── STEP 1: find the pixel coordinates of the like button ──
+        // We ask the page for the bounding rect of the like action element.
+        // We try every known selector in priority order.
+        const coords = await wv.executeJavaScript(`
+          (function() {
+            const selectors = [
+              '[data-qa-role="encounters-action-like"]',
+              '.encounters-action--like',
+              '.encounters-action--like .encounters-action__icon',
+              '[aria-label="Like"]',
+              '[tabindex="0"][aria-label="Like"]',
+            ];
+
+            for (const sel of selectors) {
+              const el = document.querySelector(sel);
+              if (!el) continue;
+              const r = el.getBoundingClientRect();
+              if (r.width === 0 || r.height === 0) continue;
+              return {
+                found: true,
+                x: Math.round(r.left + r.width  / 2),
+                y: Math.round(r.top  + r.height / 2),
+                selector: sel,
+                tag: el.tagName,
+                classes: el.className
+              };
+            }
+
+            // Fallback: scan all elements with tabindex=0 that contain the yes SVG path
+            const all = document.querySelectorAll('[tabindex="0"]');
+            for (const el of all) {
+              const svg = el.querySelector('path[d^="M35.759"]');
+              if (!svg) continue;
+              const r = el.getBoundingClientRect();
+              if (r.width === 0 || r.height === 0) continue;
+              return { found: true, x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2), selector: 'tabindex+svg', tag: el.tagName, classes: el.className };
+            }
+
+            // Check for blocking modal
+            const modal = document.querySelector('[role="dialog"]');
+            if (modal) {
+              const txt = modal.textContent.toLowerCase();
+              if (txt.includes('out of likes') || txt.includes('upgrade') || txt.includes('premium'))
+                return { found: false, reason: 'out_of_likes' };
+              const close = modal.querySelector('[class*="close"], [aria-label*="close"], [aria-label*="Close"], button');
+              if (close) {
+                const r = close.getBoundingClientRect();
+                return { found: false, reason: 'modal', closeX: Math.round(r.left + r.width/2), closeY: Math.round(r.top + r.height/2) };
+              }
+              return { found: false, reason: 'modal_no_close' };
+            }
+
+            return { found: false, reason: 'not_found' };
+          })()
+        `);
+
+        if (!coords.found) {
+          if (coords.reason === 'out_of_likes') {
+            log("warn", "⚠️ Out of likes / upgrade prompt. Stopping.");
+            toast("Out of likes! Stopping.", "warning");
+            break;
+          }
+          if (coords.reason === 'modal' && coords.closeX) {
+            log("info", "🔄 Modal detected — closing it");
+            await window.api.webview.nativeMouse(wv.getWebContentsId(), coords.closeX, coords.closeY);
+            await bumbleDelay(1200);
+            bumbleFailedCount++;
+            bumbleUpdateProgress("Closing modal...");
+            continue;
+          }
+          if (coords.reason === 'modal_no_close') {
+            log("warn", "⚠️ Modal with no close button — pressing Escape");
+            await wv.executeJavaScript(`document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',keyCode:27,bubbles:true}))`);
+            await bumbleDelay(1000);
+            bumbleFailedCount++;
+            continue;
+          }
+          // Button not found at all — try keyboard fallback
+          log("warn", `⚠️ Like button not found (${coords.reason}) — trying ArrowRight key`);
+          await wv.executeJavaScript(`
+            ['keydown','keyup'].forEach(t =>
+              document.dispatchEvent(new KeyboardEvent(t, {key:'ArrowRight',keyCode:39,code:'ArrowRight',which:39,bubbles:true}))
+            );
+          `);
+          await bumbleDelay(800);
+          bumbleFailedCount++;
+          bumbleUpdateProgress("Key fallback used");
+          const randMs = Math.round((Math.random() * (maxDelay - minDelay) + minDelay) * 1000);
+          await bumbleDelay(randMs);
+          continue;
+        }
+
+        log("info", `🎯 Found like button at (${coords.x}, ${coords.y}) via "${coords.selector}"`);
+
+        // ── STEP 2: native OS-level mouse click via main process ──
+        // This bypasses React's synthetic event system entirely.
+        try {
+          await window.api.webview.nativeMouse(wv.getWebContentsId(), coords.x, coords.y);
+          bumbleLikedCount++;
+          log("success", `❤️ Like #${bumbleLikedCount} sent via native click`);
+          bumbleUpdateProgress(`Liked! (${bumbleLikedCount}/${limit})`);
+        } catch (e) {
+          // nativeMouse not available — fall back to CDP input injection
+          log("warn", "⚠️ nativeMouse unavailable, using CDP input");
+          try {
+            await wv.executeJavaScript(`
+              (function() {
+                const el = document.querySelector('[data-qa-role="encounters-action-like"]') ||
+                           document.querySelector('.encounters-action--like');
+                if (!el) return;
+                // Force Bumble's React fiber to process a real pointer sequence
+                const r = el.getBoundingClientRect();
+                const cx = r.left + r.width/2, cy = r.top + r.height/2;
+                const init = {bubbles:true,cancelable:true,composed:true,view:window,clientX:cx,clientY:cy,pointerId:1,pointerType:'touch',isPrimary:true};
+                el.dispatchEvent(new PointerEvent('pointerover',  init));
+                el.dispatchEvent(new PointerEvent('pointerenter', {...init,bubbles:false}));
+                el.dispatchEvent(new PointerEvent('pointerdown',  init));
+                el.dispatchEvent(new TouchEvent('touchstart', {bubbles:true,cancelable:true,touches:[new Touch({identifier:1,target:el,clientX:cx,clientY:cy})]}));
+                setTimeout(()=>{
+                  el.dispatchEvent(new PointerEvent('pointerup',   init));
+                  el.dispatchEvent(new TouchEvent('touchend', {bubbles:true,cancelable:true,changedTouches:[new Touch({identifier:1,target:el,clientX:cx,clientY:cy})]}));
+                  el.dispatchEvent(new PointerEvent('pointerout',  init));
+                  el.dispatchEvent(new MouseEvent('click', init));
+                }, 80);
+              })()
+            `);
+            await bumbleDelay(150);
+            bumbleLikedCount++;
+            log("success", `❤️ Like #${bumbleLikedCount} sent via touch simulation`);
+            bumbleUpdateProgress(`Liked! (${bumbleLikedCount}/${limit})`);
+          } catch (e2) {
+            bumbleFailedCount++;
+            log("error", `❌ All click methods failed: ${e2.message}`);
+          }
+        }
+
+        // ── STEP 3: wait before next like ──
+        if (bumbleLikedCount < limit && !bumbleShouldStop) {
+          const randMs = Math.round((Math.random() * (maxDelay - minDelay) + minDelay) * 1000);
+          bumbleUpdateProgress(`Waiting ${(randMs/1000).toFixed(1)}s...`);
+          await bumbleDelay(randMs);
+        }
+      }
+    } catch (err) {
+      log("error", `❌ Bumble engine error: ${err.message}`);
+    } finally {
+      bumbleIsRunning = false;
+      bumbleIsPaused  = false;
+      $("#btn-bumble-start").style.display = "";
+      $("#btn-bumble-pause").style.display = "none";
+      $("#btn-bumble-stop").style.display  = "none";
+      const summary = `🏁 Done: ${bumbleLikedCount} liked, ${bumbleFailedCount} failed`;
+      log("success", summary);
+      bumbleUpdateProgress("Finished!");
+      statusText.textContent = summary;
+      toast(summary, "success");
+      await window.api.history.add({
+        url: "Bumble Auto Like", title: `Swiped: ${bumbleLikedCount} likes`,
+        filled: bumbleLikedCount, aiFilled: 0, skipped: bumbleFailedCount,
+      });
+    }
+  }
+
+  // Bumble UI Listeners
+  $("#btn-bumble-start").addEventListener("click", () => {
+    if (!activeTabId) {
+      toast("Open Bumble first!", "warning");
+      return;
+    }
+    const wv = webviewContainer.querySelector(`#${activeTabId}`);
+    if (!wv) return;
+
+    try {
+      wv.executeJavaScript("window.location.hostname").then((hostname) => {
+        if (!hostname.includes("bumble.com")) {
+          toast("Please navigate to bumble.com first!", "warning");
+          return;
+        }
+        bumbleAutoLike();
+      });
+    } catch (e) {
+      bumbleAutoLike(); // Try anyway
+    }
+  });
+
+  $("#btn-bumble-pause").addEventListener("click", () => {
+    if (bumbleIsPaused) {
+      bumbleIsPaused = false;
+      $("#btn-bumble-pause").innerHTML =
+        '<span class="material-icons-round">pause</span> Pause';
+      log("info", "▶️ Bumble automation resumed");
+    } else {
+      bumbleIsPaused = true;
+      $("#btn-bumble-pause").innerHTML =
+        '<span class="material-icons-round">play_arrow</span> Resume';
+      log("info", "⏸️ Bumble automation paused");
+    }
+  });
+
+  $("#btn-bumble-stop").addEventListener("click", () => {
+    bumbleShouldStop = true;
+    bumbleIsPaused = false;
+    log("info", "🛑 Bumble automation stopping...");
   });
 
   // ═══ LOGGING ═══
@@ -3399,7 +3722,430 @@ document.addEventListener("DOMContentLoaded", () => {
         toast("Opened in new tab", "success");
       });
     }
+
+    // Initialize Direct Job Radar UI
+    initRadarUI();
+  }
+
+  // ═══ DIRECT JOB RADAR UI CONTROLLER ═══
+  let radarFilterStatus = "queue";
+  let radarFilterAts = "";
+  let radarFilterLocation = "";
+  let radarFilterCategory = "";
+  let radarSearchQuery = "";
+  let radarQueuePage = 0;
+  let radarQueueRenderId = 0;
+  let radarUpdateTimer = null;
+  const RADAR_PAGE_SIZE = 40;
+
+  async function initRadarUI() {
+    if (!window.api || !window.api.watcher) return;
+
+    // Radar Subtabs
+    const btnSubtabQueue = $("#subtab-radar-queue");
+    const btnSubtabCompanies = $("#subtab-radar-companies");
+    const subviewQueue = $("#radar-subview-queue");
+    const subviewCompanies = $("#radar-subview-companies");
+
+    if (btnSubtabQueue && btnSubtabCompanies) {
+      btnSubtabQueue.addEventListener("click", () => {
+        btnSubtabQueue.classList.add("active");
+        btnSubtabQueue.style.border = "1px solid #6366f1";
+        btnSubtabQueue.style.background = "linear-gradient(135deg, #1e1e38, #18182b)";
+        btnSubtabQueue.style.color = "#fff";
+
+        btnSubtabCompanies.classList.remove("active");
+        btnSubtabCompanies.style.border = "1px solid rgba(255,255,255,0.08)";
+        btnSubtabCompanies.style.background = "#12121c";
+        btnSubtabCompanies.style.color = "#94a3b8";
+
+        subviewQueue.style.display = "block";
+        subviewCompanies.style.display = "none";
+        renderRadarQueue();
+      });
+
+      btnSubtabCompanies.addEventListener("click", () => {
+        btnSubtabCompanies.classList.add("active");
+        btnSubtabCompanies.style.border = "1px solid #6366f1";
+        btnSubtabCompanies.style.background = "linear-gradient(135deg, #1e1e38, #18182b)";
+        btnSubtabCompanies.style.color = "#fff";
+
+        btnSubtabQueue.classList.remove("active");
+        btnSubtabQueue.style.border = "1px solid rgba(255,255,255,0.08)";
+        btnSubtabQueue.style.background = "#12121c";
+        btnSubtabQueue.style.color = "#94a3b8";
+
+        subviewCompanies.style.display = "block";
+        subviewQueue.style.display = "none";
+        renderRadarCompanies();
+      });
+    }
+
+    // Filter Listeners
+    const searchInput = $("#radar-search-input");
+    const statusSelect = $("#radar-filter-status");
+    const atsSelect = $("#radar-filter-ats");
+    const locationSelect = $("#radar-filter-location");
+    const categorySelect = $("#radar-filter-category");
+
+    if (searchInput) {
+      searchInput.addEventListener("input", (e) => {
+        radarSearchQuery = e.target.value.trim();
+        radarQueuePage = 0;
+        renderRadarQueue();
+      });
+    }
+
+    if (statusSelect) {
+      statusSelect.addEventListener("change", (e) => {
+        radarFilterStatus = e.target.value;
+        radarQueuePage = 0;
+        renderRadarQueue();
+      });
+    }
+
+    if (atsSelect) {
+      atsSelect.addEventListener("change", (e) => {
+        radarFilterAts = e.target.value;
+        radarQueuePage = 0;
+        renderRadarQueue();
+      });
+    }
+
+    if (locationSelect) {
+      locationSelect.addEventListener("change", (e) => {
+        radarFilterLocation = e.target.value;
+        radarQueuePage = 0;
+        renderRadarQueue();
+      });
+    }
+
+    if (categorySelect) {
+      categorySelect.addEventListener("change", (e) => {
+        radarFilterCategory = e.target.value;
+        radarQueuePage = 0;
+        renderRadarQueue();
+      });
+    }
+
+
+    // Scan Now Trigger
+    const btnScan = $("#btn-radar-poll-now");
+    if (btnScan) {
+      btnScan.addEventListener("click", async () => {
+        btnScan.disabled = true;
+        btnScan.innerHTML = `<span class="material-icons-round" style="font-size:14px;">sync</span> Scanning...`;
+        toast("Scanning 100+ company ATS portals...", "info");
+        try {
+          await window.api.watcher.triggerPollNow();
+          toast("ATS Scan Complete!", "success");
+        } catch (e) {
+          toast("Scan failed: " + e.message, "error");
+        } finally {
+          btnScan.disabled = false;
+          btnScan.innerHTML = `<span class="material-icons-round" style="font-size:14px;">refresh</span> Scan Now`;
+          renderRadarDashboard();
+        }
+      });
+    }
+
+    // Add Custom Company
+    const btnAddComp = $("#btn-radar-add-company");
+    const inputComp = $("#radar-add-company-input");
+
+    if (btnAddComp && inputComp) {
+      btnAddComp.addEventListener("click", async () => {
+        const val = inputComp.value.trim();
+        if (!val) return;
+        try {
+          const added = await window.api.watcher.addCompany({ url: val });
+          inputComp.value = "";
+          toast(`Added target: ${added.name} [${added.atsType.toUpperCase()}]`, "success");
+          renderRadarDashboard();
+          renderRadarCompanies();
+        } catch (e) {
+          toast("Error adding company: " + e.message, "error");
+        }
+      });
+    }
+
+    // Live IPC updates listener
+    window.api.watcher.onUpdate(() => {
+      // A worker message arrives for each company. Coalesce those updates so
+      // the renderer does not repeatedly rebuild the queue during one scan.
+      clearTimeout(radarUpdateTimer);
+      radarUpdateTimer = setTimeout(() => renderRadarDashboard(), 250);
+    });
+
+    // Initial Dashboard Render
+    renderRadarDashboard();
+  }
+
+  async function renderRadarDashboard() {
+    if (!window.api || !window.api.watcher) return;
+    try {
+      const stats = await window.api.watcher.getStats();
+      const compEl = $("#stat-radar-companies");
+      const queueEl = $("#stat-radar-queue");
+      const topEl = $("#stat-radar-topmatches");
+      const appEl = $("#stat-radar-applied");
+
+      if (compEl) compEl.textContent = stats.activeCompanies || 0;
+      if (queueEl) queueEl.textContent = stats.queueCount || 0;
+      if (topEl) topEl.textContent = stats.topMatchesCount || 0;
+      if (appEl) appEl.textContent = stats.appliedCount || 0;
+
+      const lastPolledEl = $("#radar-last-polled");
+      if (lastPolledEl) {
+        if (stats.isPolling) {
+          lastPolledEl.textContent = "Scanning ATS endpoints live...";
+          lastPolledEl.style.color = "#818cf8";
+        } else if (stats.lastPolledAt) {
+          const timeAgo = new Date(stats.lastPolledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          lastPolledEl.textContent = `Last scanned at ${timeAgo}`;
+          lastPolledEl.style.color = "#94a3b8";
+        } else {
+          lastPolledEl.textContent = "Daemon Active (Auto-Polls Every 3m)";
+        }
+      }
+
+      renderRadarQueue();
+    } catch (e) {
+      console.warn("Error rendering radar dashboard:", e);
+    }
+  }
+
+  async function renderRadarQueue() {
+    if (!window.api || !window.api.watcher) return;
+    const container = $("#radar-queue-list");
+    if (!container) return;
+
+    const renderId = ++radarQueueRenderId;
+    try {
+      const filter = {
+        status: radarFilterStatus,
+        atsType: radarFilterAts,
+        locationFilter: radarFilterLocation,
+        categoryFilter: radarFilterCategory,
+        search: radarSearchQuery,
+        minScore: radarFilterStatus === "queue" ? 60 : 0,
+        limit: RADAR_PAGE_SIZE,
+        offset: radarQueuePage * RADAR_PAGE_SIZE
+      };
+
+
+
+      const result = await window.api.watcher.getPostings(filter);
+      const postings = Array.isArray(result) ? result : (result?.items || []);
+      const totalPostings = Array.isArray(result) ? result.length : (result?.total || 0);
+      // A scan update can arrive while this request is in flight. Ignore the
+      // stale response so an older large render cannot overwrite a newer one.
+      if (renderId !== radarQueueRenderId) return;
+
+      if (!postings || postings.length === 0) {
+        const pagination = $("#radar-queue-pagination");
+        if (pagination) pagination.innerHTML = "";
+        if (totalPostings > 0 && radarQueuePage > 0) {
+          radarQueuePage = 0;
+          return renderRadarQueue();
+        }
+        container.innerHTML = `
+          <div style="text-align: center; color: #64748b; font-size: 11px; padding: 24px; background: rgba(255,255,255,0.02); border-radius: 8px;">
+            <span class="material-icons-round" style="font-size: 24px; color: #475569; display: block; margin-bottom: 4px;">search_off</span>
+            No postings match current radar filter.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = "";
+
+      const totalPages = Math.ceil(totalPostings / RADAR_PAGE_SIZE);
+      radarQueuePage = Math.min(radarQueuePage, Math.max(0, totalPages - 1));
+      // The main process already returns only the requested page.
+      const pagePostings = postings;
+
+      pagePostings.forEach((job) => {
+        const card = document.createElement("div");
+        card.className = "radar-job-card";
+
+        const score = job.relevanceScore || 50;
+        const scoreClass = score >= 85 ? "top" : score >= 70 ? "good" : "neutral";
+        const scoreIcon = score >= 85 ? "⚡" : score >= 70 ? "✨" : "🎯";
+        const scoreLabel = score >= 85 ? `${score}% Top Choice` : `${score}% Match`;
+
+        const atsClass = (job.atsType || "generic").toLowerCase();
+        const atsLabel = (job.atsType || "generic").toUpperCase();
+
+        const timeAgo = job.firstSeen ? new Date(job.firstSeen).toLocaleDateString([], { month: 'short', day: 'numeric' }) : "";
+
+        card.innerHTML = `
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px;">
+            <div style="flex: 1; min-width: 0; padding-right: 8px;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px;">
+                <span class="radar-score-badge ${scoreClass}">${scoreIcon} ${scoreLabel}</span>
+                <span class="radar-ats-tag ${atsClass}">${atsLabel}</span>
+              </div>
+              <div style="font-size: 12px; font-weight: 700; color: #fff; line-height: 1.3; margin-bottom: 2px;">
+                ${escapeHtml(job.title)}
+              </div>
+              <div style="font-size: 11px; font-weight: 600; color: #818cf8;">
+                ${escapeHtml(job.company)}
+              </div>
+            </div>
+          </div>
+
+          <div style="font-size: 10px; color: #94a3b8; margin-bottom: 6px; display: flex; align-items: center; gap: 10px;">
+            <span><span class="material-icons-round" style="font-size: 11px; vertical-align: middle;">location_on</span> ${escapeHtml(job.location || "Remote")}</span>
+            ${job.department ? `<span>• ${escapeHtml(job.department)}</span>` : ""}
+            ${timeAgo ? `<span style="margin-left: auto; color: #64748b;">${timeAgo}</span>` : ""}
+          </div>
+
+          ${job.reason ? `
+            <div style="font-size: 10px; color: #cbd5e1; background: rgba(0,0,0,0.3); padding: 5px 8px; border-radius: 6px; border-left: 2px solid #6366f1; margin-bottom: 8px;">
+              ${escapeHtml(job.reason)}
+            </div>
+          ` : ""}
+
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+            <button class="radar-action-btn apply-btn" data-action="launch" data-url="${escapeHtml(job.url)}" data-title="${escapeHtml(job.title)}" data-company="${escapeHtml(job.company)}">
+              <span class="material-icons-round" style="font-size: 12px;">rocket_launch</span> Launch & Auto-Apply
+            </button>
+            <div style="display: flex; gap: 4px;">
+              ${job.status !== "applied" ? `
+                <button class="radar-action-btn" data-action="mark-applied" data-id="${job.id}" title="Mark Applied">
+                  <span class="material-icons-round" style="font-size: 12px; color: #34d399;">check_circle</span>
+                </button>
+              ` : `
+                <span style="font-size: 9px; color: #34d399; font-weight: 600; padding: 3px 6px;">APPLIED</span>
+              `}
+              <button class="radar-action-btn" data-action="dismiss" data-id="${job.id}" title="Dismiss Posting">
+                <span class="material-icons-round" style="font-size: 12px; color: #f87171;">close</span>
+              </button>
+            </div>
+          </div>
+        `;
+
+        // Attach Card Button Handlers
+        card.querySelector('[data-action="launch"]').addEventListener("click", (e) => {
+          const btn = e.currentTarget;
+          const url = btn.dataset.url;
+          const title = `${btn.dataset.title} (${btn.dataset.company})`;
+          const tabId = createTab(url, title);
+          switchTab(tabId);
+          toast(`Launched ${btn.dataset.title} in new browser tab!`, "success");
+        });
+
+        const markBtn = card.querySelector('[data-action="mark-applied"]');
+        if (markBtn) {
+          markBtn.addEventListener("click", async (e) => {
+            const id = e.currentTarget.dataset.id;
+            await window.api.watcher.markApplied(id);
+            toast("Marked as Applied", "success");
+            renderRadarDashboard();
+          });
+        }
+
+        const dismissBtn = card.querySelector('[data-action="dismiss"]');
+        if (dismissBtn) {
+          dismissBtn.addEventListener("click", async (e) => {
+            const id = e.currentTarget.dataset.id;
+            await window.api.watcher.dismissPosting(id);
+            toast("Job dismissed", "info");
+            renderRadarDashboard();
+          });
+        }
+
+        container.appendChild(card);
+      });
+
+      const pagination = $("#radar-queue-pagination");
+      if (pagination) {
+        pagination.innerHTML = "";
+        if (totalPages > 1) {
+          const previous = document.createElement("button");
+          previous.className = "radar-action-btn";
+          previous.textContent = "‹ Previous";
+          previous.disabled = radarQueuePage === 0;
+          previous.onclick = () => { radarQueuePage--; renderRadarQueue(); };
+
+          const label = document.createElement("span");
+          label.style.cssText = "font-size:10px;color:#94a3b8;";
+          label.textContent = `Page ${radarQueuePage + 1} of ${totalPages} (${totalPostings} jobs)`;
+
+          const next = document.createElement("button");
+          next.className = "radar-action-btn";
+          next.textContent = "Next ›";
+          next.disabled = radarQueuePage >= totalPages - 1;
+          next.onclick = () => { radarQueuePage++; renderRadarQueue(); };
+
+          pagination.append(previous, label, next);
+        }
+      }
+    } catch (e) {
+      console.warn("Error rendering radar queue:", e);
+    }
+  }
+
+  async function renderRadarCompanies() {
+    if (!window.api || !window.api.watcher) return;
+    const container = $("#radar-companies-list");
+    if (!container) return;
+
+    try {
+      const companies = await window.api.watcher.getCompanies();
+      if (!companies || companies.length === 0) {
+        container.innerHTML = `<div style="text-align: center; color: #64748b; font-size: 11px; padding: 20px;">No watched target companies found.</div>`;
+        return;
+      }
+
+      container.innerHTML = "";
+
+      companies.forEach((comp) => {
+        const item = document.createElement("div");
+        item.style.cssText = "background: rgba(22, 22, 38, 0.7); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; justify-content: space-between;";
+
+        const atsClass = (comp.atsType || "generic").toLowerCase();
+        const atsLabel = (comp.atsType || "generic").toUpperCase();
+
+        item.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+            <input type="checkbox" class="radar-comp-toggle" data-id="${comp.id}" ${comp.active ? "checked" : ""} style="width: 14px; height: 14px; accent-color: #6366f1; cursor: pointer;">
+            <div style="min-width: 0;">
+              <div style="font-size: 11px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 6px;">
+                ${escapeHtml(comp.name)}
+                <span class="radar-ats-tag ${atsClass}">${atsLabel}</span>
+              </div>
+              <div style="font-size: 10px; color: #64748b;">
+                ${comp.domain || comp.boardToken || "Direct ATS"} ${comp.jobCount ? `• ${comp.jobCount} open roles` : ""}
+              </div>
+            </div>
+          </div>
+
+          <button class="radar-action-btn" data-action="remove-company" data-id="${comp.id}" title="Remove Company" style="background: none; border: none; padding: 4px;">
+            <span class="material-icons-round" style="font-size: 14px; color: #64748b;">delete_outline</span>
+          </button>
+        `;
+
+        item.querySelector(".radar-comp-toggle").addEventListener("change", async (e) => {
+          await window.api.watcher.toggleCompany(comp.id, e.target.checked);
+          renderRadarDashboard();
+        });
+
+        item.querySelector('[data-action="remove-company"]').addEventListener("click", async () => {
+          await window.api.watcher.removeCompany(comp.id);
+          toast(`Removed ${comp.name}`, "info");
+          renderRadarDashboard();
+          renderRadarCompanies();
+        });
+
+        container.appendChild(item);
+      });
+    } catch (e) {
+      console.warn("Error rendering radar companies:", e);
+    }
   }
 
   init();
 });
+

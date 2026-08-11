@@ -1350,6 +1350,100 @@ Respond with JSON only (no markdown, no code blocks):`;
       location: "",
     };
   }
+
+  /**
+   * Score job relevance against candidate profile (0-100 score + match reason)
+   */
+  async scoreJobRelevance(posting, profile) {
+    if (!posting) return { relevanceScore: 50, verdict: "NEUTRAL", reason: "Standard position" };
+
+    if (!this.initialized && this.keys.length > 0) {
+      try { this.initialize(); } catch (e) {}
+    }
+
+    // Heuristic fallback if AI fails or client not initialized
+    const heuristicScore = () => {
+      const title = (posting.title || "").toLowerCase();
+      const userRoles = (profile?.jobSearchPreferences?.targetRoles || profile?.headline || "").toLowerCase();
+      const userSkills = (profile?.skills?.technicalSkills || []).map(s => s.toLowerCase());
+
+      let score = 75;
+      let matched = [];
+
+
+      if (userRoles && userRoles.split(",").some(r => r.trim() && title.includes(r.trim()))) {
+        score += 20;
+        matched.push("Role Title");
+      }
+      userSkills.forEach(skill => {
+        if (skill && (title.includes(skill) || (posting.contentSnippet || "").toLowerCase().includes(skill))) {
+          score += 5;
+          matched.push(skill);
+        }
+      });
+
+      score = Math.min(98, Math.max(30, score));
+      return {
+        relevanceScore: score,
+        verdict: score >= 85 ? "TOP_MATCH" : score >= 70 ? "GOOD" : "NEUTRAL",
+        reason: matched.length > 0 ? `Matches profile keywords: ${matched.slice(0, 4).join(", ")}` : "Position matches candidate domain",
+        keyMatchingSkills: matched
+      };
+    };
+
+    if (!this.clients || this.clients.length === 0) {
+      return heuristicScore();
+    }
+
+    const prompt = `You are an expert AI career matching system evaluating a newly published job opening for a candidate.
+
+JOB POSTING:
+- Title: ${posting.title}
+- Company: ${posting.company}
+- Location: ${posting.location}
+- Department: ${posting.department || "N/A"}
+- Snippet: ${posting.contentSnippet || "N/A"}
+
+CANDIDATE PROFILE:
+- Full Name: ${profile?.firstName || ""} ${profile?.lastName || ""}
+- Headline/Target Title: ${profile?.headline || profile?.jobSearchPreferences?.targetRoles || "Software Engineer / Tech Professional"}
+- Technical Skills: ${(profile?.skills?.technicalSkills || []).join(", ")}
+- Total Experience: ${profile?.totalExperienceYears || "N/A"} years
+- Location Preference: ${profile?.jobSearchPreferences?.preferredLocations || "Remote / Anywhere"}
+
+Task: Evaluate how relevant this job posting is for the candidate. Return a JSON object ONLY:
+{
+  "relevanceScore": <integer 0 to 100>,
+  "verdict": <"TOP_MATCH" | "GOOD" | "NEUTRAL" | "POOR">,
+  "reason": "<1 concise sentence explaining the score and why it fits or doesn't fit>",
+  "keyMatchingSkills": ["skill1", "skill2"]
+}`;
+
+    for (let attempt = 0; attempt < this.clients.length; attempt++) {
+      const { client } = this._getNextHealthyClient();
+      try {
+        const model = client.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+        const result = await model.generateContent(prompt);
+        const responseText = result.response.text().trim();
+        const jsonText = responseText.replace(/```json\s*/gi, "").replace(/```\s*/g, "");
+        const parsed = JSON.parse(jsonText);
+
+        return {
+          relevanceScore: Math.min(100, Math.max(0, parseInt(parsed.relevanceScore || 70, 10))),
+          verdict: parsed.verdict || (parsed.relevanceScore >= 85 ? "TOP_MATCH" : "GOOD"),
+          reason: parsed.reason || "Matches candidate profile.",
+          keyMatchingSkills: parsed.keyMatchingSkills || []
+        };
+      } catch (e) {
+        if (attempt === this.clients.length - 1) {
+          return heuristicScore();
+        }
+      }
+    }
+
+    return heuristicScore();
+  }
 }
 
 module.exports = { AIService };
+

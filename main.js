@@ -69,8 +69,11 @@ try {
 
 const store = new Store();
 const profileStore = new ProfileStore(store);
+const { WatcherService } = require("./engine/watcher-service");
+const watcherService = new WatcherService(store, profileStore);
 
 let mainWindow;
+
 
 function createWindow() {
   const { screen } = require("electron");
@@ -297,6 +300,16 @@ app.whenReady().then(() => {
   // ── STEP 2: Create window (sessions are patched before any requests go out) ──
   createWindow();
 
+  watcherService.onUpdate((event, data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("watcher:update", { event, data });
+    }
+  });
+  // Start after the listener is attached so the renderer receives status
+  // updates, while the service itself delays the first network scan.
+  watcherService.start();
+
+
   // ── STEP 3: Patch navigator.userAgent in every renderer process ──
   // Even with session.setUserAgent, the JS property navigator.userAgent can
   // still report the Electron UA inside the renderer. We override it via script.
@@ -369,6 +382,7 @@ app.whenReady().then(() => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+app.on("before-quit", () => watcherService.stop());
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
@@ -490,6 +504,29 @@ ipcMain.handle("webview:inspectElement", (_, { webContentsId, x, y }) => {
     return { success: false, error: "WebContents not found" };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("webview-native-mouse", async (event, { webContentsId, x, y }) => {
+  try {
+    const { webContents } = require("electron");
+    const wc = webContents.fromId(webContentsId);
+    if (!wc) return { success: false, error: "webContents not found" };
+
+    // Send a real OS-level mouse click — bypasses all JS event systems
+    wc.sendInputEvent({ type: "mouseMove", x, y });
+    wc.sendInputEvent({
+      type: "mouseDown",
+      x,
+      y,
+      button: "left",
+      clickCount: 1,
+    });
+    await new Promise((r) => setTimeout(r, 60));
+    wc.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 });
 
@@ -1077,3 +1114,18 @@ ipcMain.handle("app:clearSiteData", async (_, domain) => {
     return { success: false, error: e.message };
   }
 });
+
+// ─── Direct-Source Job Watcher IPC Handlers ───
+ipcMain.handle("watcher:getStats", () => watcherService.getStats());
+ipcMain.handle("watcher:getPostings", (_, filter) => watcherService.getPostings(filter));
+ipcMain.handle("watcher:getCompanies", () => watcherService.getCompanies());
+ipcMain.handle("watcher:addCompany", (_, comp) => watcherService.addCompany(comp));
+ipcMain.handle("watcher:toggleCompany", (_, { id, active }) => watcherService.toggleCompany(id, active));
+ipcMain.handle("watcher:removeCompany", (_, id) => watcherService.removeCompany(id));
+ipcMain.handle("watcher:triggerPollNow", async () => {
+  await watcherService.pollAllCompanies();
+  return watcherService.getStats();
+});
+ipcMain.handle("watcher:markApplied", (_, id) => watcherService.markApplied(id));
+ipcMain.handle("watcher:dismissPosting", (_, id) => watcherService.dismissPosting(id));
+

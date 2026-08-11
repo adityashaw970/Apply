@@ -53,7 +53,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   webview: {
     openDevTools: (webContentsId) => ipcRenderer.invoke('webview:openDevTools', webContentsId),
-    inspectElement: (webContentsId, x, y) => ipcRenderer.invoke('webview:inspectElement', { webContentsId, x, y })
+    inspectElement: (webContentsId, x, y) => ipcRenderer.invoke('webview:inspectElement', { webContentsId, x, y }),
+    nativeMouse:    (wcId, x, y) => ipcRenderer.invoke('webview-native-mouse',    { webContentsId: wcId, x, y }),
   },
   history: {
     get: () => ipcRenderer.invoke('history:get'),
@@ -64,5 +65,22 @@ contextBridge.exposeInMainWorld('api', {
     getSiteData: () => ipcRenderer.invoke('app:getSiteData'),
     clearAllSiteData: () => ipcRenderer.invoke('app:clearAllSiteData'),
     clearSiteData: (domain) => ipcRenderer.invoke('app:clearSiteData', domain)
+  },
+  watcher: {
+    getStats: () => ipcRenderer.invoke('watcher:getStats'),
+    getPostings: (filter) => ipcRenderer.invoke('watcher:getPostings', filter),
+    getCompanies: () => ipcRenderer.invoke('watcher:getCompanies'),
+    addCompany: (comp) => ipcRenderer.invoke('watcher:addCompany', comp),
+    toggleCompany: (id, active) => ipcRenderer.invoke('watcher:toggleCompany', { id, active }),
+    removeCompany: (id) => ipcRenderer.invoke('watcher:removeCompany', id),
+    triggerPollNow: () => ipcRenderer.invoke('watcher:triggerPollNow'),
+    markApplied: (id) => ipcRenderer.invoke('watcher:markApplied', id),
+    dismissPosting: (id) => ipcRenderer.invoke('watcher:dismissPosting', id),
+    onUpdate: (callback) => {
+      const listener = (_, data) => callback(data);
+      ipcRenderer.on('watcher:update', listener);
+      return () => ipcRenderer.removeListener('watcher:update', listener);
+    }
   }
 });
+

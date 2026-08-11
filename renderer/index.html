@@ -95,7 +95,11 @@
         <button class="panel-tab" data-panel="linkedin">
           <span class="material-icons-round">bolt</span> Apply
         </button>
+        <button class="panel-tab" data-panel="radar">
+          <span class="material-icons-round">radar</span> Radar
+        </button>
       </div>
+
       <!-- Profile Panel -->
       <div class="panel-content active" id="panel-profile">
         <div style="margin-top: -10px;" class="panel-scroll">
@@ -411,7 +415,7 @@
               </button>
             </div>
             <div id="site-data-list"
-              style="display:none;background:#1e1e2d;border-radius:6px;padding:8px;max-height:200px;overflow-y:auto;">
+              style="background:#1e1e2d;border-radius:6px;padding:8px;max-height:200px;overflow-y:auto;">
               <!-- Site data domains will be listed here -->
             </div>
           </div>
@@ -459,7 +463,7 @@
               </button>
             </div>
           </div>
-          <div class="pf-section" id="li-progress-section" style="display:none;">
+          <div class="pf-section" id="li-progress-section" >
             <h3 class="pf-title">Progress</h3>
             <div style="display:flex;gap:16px;margin-bottom:8px;">
               <div style="text-align:center;flex:1;">
@@ -482,9 +486,181 @@
             </div>
             <div style="font-size:11px;color:#aaa;margin-top:6px;" id="li-current-job">Waiting...</div>
           </div>
+          <!-- Bumble section inside Apply/LinkedIn panel -->
+          <div class="pf-section" style="display: none; margin-top: 20px; border-color: rgba(245, 193, 36, 0.3);">
+            <h3 class="pf-title" style="color: #F5C124;">🐝 Bumble Auto Liker</h3>
+            <p style="font-size:12px;color:#999;margin:0 0 12px;">Navigate to Bumble Encounters, then start auto-clicking the Like button.</p>
+            <div class="pf-grid">
+              <label>Likes Limit<input type="number" id="bumble-limit" value="100" min="1" max="1000" placeholder="100"></label>
+              <label>Min Delay (sec)<input type="number" id="bumble-min-delay" value="1.5" min="0.5" step="0.1" placeholder="1.5"></label>
+              <label>Max Delay (sec)<input type="number" id="bumble-max-delay" value="3.0" min="0.5" step="0.1" placeholder="3.0"></label>
+            </div>
+          </div>
+          <div class="pf-section" style="display: none; border-color: rgba(245, 193, 36, 0.2);">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn-save-profile" id="btn-bumble-start"
+                style="background:linear-gradient(135deg,#F5C124,#D29E11);color:#000;font-weight:600;flex:1;">
+                <span class="material-icons-round">play_arrow</span> Start Auto Like
+              </button>
+              <button class="btn-save-profile" id="btn-bumble-pause" style="background:#444;flex:0.5;display:none;">
+                <span class="material-icons-round">pause</span> Pause
+              </button>
+              <button class="btn-save-profile" id="btn-bumble-stop" style="background:#c62828;flex:0.5;display:none;">
+                <span class="material-icons-round">stop</span> Stop
+              </button>
+            </div>
+          </div>
+          <div class="pf-section" id="bumble-progress-section" style="display: none; border-color: rgba(245, 193, 36, 0.2);">
+            <h3 class="pf-title" style="color: #F5C124;">Progress</h3>
+            <div style="display:flex;gap:16px;margin-bottom:8px;">
+              <div style="text-align:center;flex:1;">
+                <div style="font-size:24px;font-weight:700;color:#F5C124;" id="bumble-liked-count">0</div>
+                <div style="font-size:11px;color:#999;">Liked</div>
+              </div>
+              <div style="text-align:center;flex:1;">
+                <div style="font-size:24px;font-weight:700;color:#f44336;" id="bumble-failed-count">0</div>
+                <div style="font-size:11px;color:#999;">Failed / Retried</div>
+              </div>
+            </div>
+            <div style="background:#1a1a2e;border-radius:8px;overflow:hidden;height:6px;">
+              <div id="bumble-progress-bar"
+                style="height:100%;width:0%;background:linear-gradient(90deg,#F5C124,#4caf50);transition:width 0.3s;">
+              </div>
+            </div>
+            <div style="font-size:11px;color:#aaa;margin-top:6px;" id="bumble-current-status">Waiting...</div>
+          </div>
         </div>
       </div>
+
+      <!-- Direct Job Radar Panel -->
+      <div class="panel-content" id="panel-radar">
+        <div class="panel-scroll" style="padding: 12px;">
+
+          <!-- Radar Header / Live Stats Bar -->
+          <div class="radar-header-card" style="background: linear-gradient(135deg, rgba(30,30,55,0.9), rgba(18,18,32,0.95)); border: 1px solid rgba(99,102,241,0.25); border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="material-icons-round radar-pulse-icon" style="color: #6366f1; font-size: 22px;">radar</span>
+                <div>
+                  <h3 style="margin: 0; font-size: 14px; font-weight: 700; color: #fff; display:flex; align-items:center; gap:6px;">
+                    Direct Job Radar
+                    <span style="font-size:9px; background:rgba(99,102,241,0.2); color:#818cf8; border:1px solid rgba(99,102,241,0.4); padding:1px 6px; border-radius:10px; font-weight:600;">LIVE</span>
+                  </h3>
+                  <div style="font-size: 10px; color: #94a3b8;" id="radar-last-polled">Scanning ATS Endpoints...</div>
+                </div>
+              </div>
+              <button class="btn-save-profile" id="btn-radar-poll-now" style="padding: 6px 12px; font-size: 11px; width: auto; margin: 0; background: linear-gradient(135deg, #6366f1, #4f46e5);">
+                <span class="material-icons-round" style="font-size: 14px;">refresh</span> Scan Now
+              </button>
+            </div>
+
+            <!-- Stats Grid -->
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center;">
+              <div style="background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 6px 4px;">
+                <div style="font-size: 15px; font-weight: 700; color: #818cf8;" id="stat-radar-companies">0</div>
+                <div style="font-size: 9px; color: #64748b;">Targets</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 6px 4px;">
+                <div style="font-size: 15px; font-weight: 700; color: #34d399;" id="stat-radar-queue">0</div>
+                <div style="font-size: 9px; color: #64748b;">Queue</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 6px 4px;">
+                <div style="font-size: 15px; font-weight: 700; color: #fbbf24;" id="stat-radar-topmatches">0</div>
+                <div style="font-size: 9px; color: #64748b;">Top Fits</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 6px 4px;">
+                <div style="font-size: 15px; font-weight: 700; color: #60a5fa;" id="stat-radar-applied">0</div>
+                <div style="font-size: 9px; color: #64748b;">Applied</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Radar Sub-Tabs -->
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <button class="radar-subtab active" id="subtab-radar-queue" style="flex:1; padding:7px; font-size:11px; background:linear-gradient(135deg, #1e1e38, #18182b); border:1px solid #6366f1; color:#fff; border-radius:8px; cursor:pointer; font-weight:600;">
+              <span class="material-icons-round" style="font-size:13px; vertical-align:middle; margin-right:3px;">work</span> Apply Queue
+            </button>
+            <button class="radar-subtab" id="subtab-radar-companies" style="flex:1; padding:7px; font-size:11px; background:#12121c; border:1px solid rgba(255,255,255,0.08); color:#94a3b8; border-radius:8px; cursor:pointer; font-weight:500;">
+              <span class="material-icons-round" style="font-size:13px; vertical-align:middle; margin-right:3px;">business</span> Watched (100+)
+            </button>
+          </div>
+
+          <!-- Queue Subview -->
+          <div id="radar-subview-queue">
+            <!-- Filter Bar -->
+            <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;">
+              <input type="text" id="radar-search-input" placeholder="Search title, company, location..." style="width:100%; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); color:#fff; padding:6px 10px; border-radius:6px; font-size:11px; outline:none;">
+              
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <select id="radar-filter-status" style="flex:1; background:#181824; border:1px solid rgba(255,255,255,0.1); color:#ccc; padding:5px 6px; border-radius:6px; font-size:10px; outline:none;">
+                  <option value="queue">Apply Queue (All Active)</option>
+                  <option value="active">All Active Jobs</option>
+                  <option value="applied">Applied Jobs</option>
+                  <option value="closed">Closed Listings</option>
+                  <option value="dismissed">Dismissed</option>
+                </select>
+                <select id="radar-filter-location" style="flex:1; background:#181824; border:1px solid rgba(255,255,255,0.1); color:#ccc; padding:5px 6px; border-radius:6px; font-size:10px; outline:none;">
+                  <option value="">All Locations</option>
+                  <option value="remote">🌐 Remote Only</option>
+                  <option value="india">🇮🇳 India / APAC</option>
+                  <option value="us">🇺🇸 US / Americas</option>
+                  <option value="europe">🇪🇺 Europe / UK</option>
+                </select>
+              </div>
+
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <select id="radar-filter-category" style="flex:1; background:#181824; border:1px solid rgba(255,255,255,0.1); color:#ccc; padding:5px 6px; border-radius:6px; font-size:10px; outline:none;">
+                  <option value="">All Roles / Depts</option>
+                  <option value="engineering">💻 Software / Eng</option>
+                  <option value="ai">🤖 AI / Data Science</option>
+                  <option value="product">📈 Product Management</option>
+                  <option value="design">🎨 Design / UX</option>
+                  <option value="sales">💼 Sales / Business</option>
+                </select>
+                <select id="radar-filter-ats" style="flex:1; background:#181824; border:1px solid rgba(255,255,255,0.1); color:#ccc; padding:5px 6px; border-radius:6px; font-size:10px; outline:none;">
+                  <option value="">All ATS Platforms</option>
+                  <option value="greenhouse">Greenhouse</option>
+                  <option value="lever">Lever</option>
+                  <option value="ashby">Ashby</option>
+                  <option value="smartrecruiters">SmartRecruiters</option>
+                  <option value="workday">Workday</option>
+                  <option value="generic">Generic / Web</option>
+                </select>
+              </div>
+            </div>
+
+
+            <!-- Queue Cards List -->
+            <div id="radar-queue-list" style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="text-align: center; color: #64748b; font-size: 11px; padding: 20px;">Scanning company ATS portals for matching jobs...</div>
+            </div>
+            <div id="radar-queue-pagination" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;"></div>
+          </div>
+
+          <!-- Companies Subview -->
+          <div id="radar-subview-companies" style="display: none;">
+            <!-- Add Custom Company -->
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 10px; border-radius: 8px; margin-bottom: 10px;">
+              <div style="font-size: 11px; font-weight: 600; color: #fff; margin-bottom: 6px;">Add Custom Target Company</div>
+              <div style="display: flex; gap: 6px;">
+                <input type="text" id="radar-add-company-input" placeholder="e.g. stripe.com or jobs.lever.co/company" style="flex: 1; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 5px 8px; border-radius: 6px; font-size: 11px; outline:none;">
+                <button id="btn-radar-add-company" style="background: #6366f1; color: #fff; border: none; padding: 5px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 4px; font-weight:600;">
+                  <span class="material-icons-round" style="font-size: 14px;">add</span> Add
+                </button>
+              </div>
+            </div>
+
+            <!-- Company List Container -->
+            <div id="radar-companies-list" style="display: flex; flex-direction: column; gap: 6px;">
+              <!-- Target company cards -->
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
+
 
     <!-- Webview Container -->
     <div class="webview-container" id="webview-container">

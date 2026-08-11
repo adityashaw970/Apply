@@ -293,9 +293,107 @@
         );
       }
 
-      // ═══ HELPER: Click with full event sequence ═══
+      // ═══ HELPER: Check element visibility (supports display:contents) ═══
+      function isVisible(el) {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return false;
+        try {
+          const style = window.getComputedStyle(el);
+          if (
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            style.opacity === "0"
+          ) {
+            return false;
+          }
+        } catch (e) {}
+        return true;
+      }
+
+      // ═══ HELPER: Find the active Easy Apply modal ═══
+      // Checks the main document AND any same-origin iframes.
+      // LinkedIn's Easy Apply modal is sometimes rendered inside an iframe
+      // overlay — document.querySelector() in the main frame cannot pierce
+      // iframe boundaries, which is why dialogs/header counts appear as 0
+      // even when the modal is visually on screen.
+      function getEasyApplyModal() {
+        function findInDoc(doc) {
+          if (!doc) return null;
+          try {
+            // Strategy 1: Walk up from #jobs-apply-header (most reliable)
+            var hdr = doc.querySelector("#jobs-apply-header");
+            if (hdr) {
+              var m = hdr.closest(".jobs-easy-apply-modal") ||
+                      hdr.closest("[data-test-modal]") ||
+                      hdr.closest('[role="dialog"]') ||
+                      hdr.closest(".artdeco-modal") ||
+                      hdr.closest("[data-test-modal-id='easy-apply-modal']");
+              if (m) return m;
+              // Fallback: return closest form or section when no modal wrapper exists
+              // (full-page apply form scenario)
+              var fb = doc.querySelector("form") ||
+                       doc.querySelector(".jobs-easy-apply-content") ||
+                       hdr.closest("section, main, article") ||
+                       hdr.parentElement;
+              if (fb) return fb;
+            }
+            // Strategy 2: Direct modal class
+            var byClass = doc.querySelector(".jobs-easy-apply-modal");
+            if (byClass) return byClass;
+            // Strategy 3: Test-id on overlay container
+            var ov = doc.querySelector("[data-test-modal-id='easy-apply-modal']");
+            if (ov) return ov.querySelector('[role="dialog"]') || ov.querySelector(".artdeco-modal") || ov;
+            // Strategy 4: aria-labelledby
+            var byLabel = doc.querySelector('[aria-labelledby="jobs-apply-header"]');
+            if (byLabel) return byLabel;
+            // Strategy 5: Any dialog containing EA form/button
+            var dlgs = Array.from(doc.querySelectorAll('[role="dialog"]'));
+            for (var i = 0; i < dlgs.length; i++) {
+              if (dlgs[i].querySelector("form, [data-easy-apply-next-button], [data-live-test-easy-apply-submit-button], .jobs-easy-apply-modal__content")) {
+                return dlgs[i];
+              }
+            }
+            // Strategy 6: [data-test-modal] with a form
+            var tms = Array.from(doc.querySelectorAll("[data-test-modal]"));
+            for (var j = 0; j < tms.length; j++) {
+              if (tms[j].querySelector("form")) return tms[j];
+            }
+          } catch(e) {}
+          return null;
+        }
+
+        // 1. Check main document
+        var mainResult = findInDoc(document);
+        if (mainResult) return mainResult;
+
+        // 2. Check same-origin iframes (LinkedIn uses iframe overlays for the apply form)
+        try {
+          var iframes = document.querySelectorAll("iframe");
+          for (var k = 0; k < iframes.length; k++) {
+            try {
+              var iDoc = iframes[k].contentDocument ||
+                        (iframes[k].contentWindow && iframes[k].contentWindow.document);
+              var iResult = findInDoc(iDoc);
+              if (iResult) {
+                console.log("[getEasyApplyModal] Found in iframe:", iframes[k].src || "(no src)");
+                return iResult;
+              }
+            } catch(e) { /* cross-origin iframe — skip */ }
+          }
+        } catch(e) {}
+
+        return null;
+      }
+
+
+      // ═══ HELPER: Click with full event sequence (nav-safe for <a> links) ═══
       function realClick(el) {
-        el.scrollIntoView({ behavior: "instant", block: "center" });
+        if (!el) return;
+        try {
+          el.scrollIntoView({ behavior: "instant", block: "center" });
+        } catch (e) {}
+
         const rect = el.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
@@ -307,12 +405,27 @@
           clientY: cy,
           button: 0,
         };
+
+        const linkEl = el.tagName === "A" ? el : el.closest("a");
+        if (linkEl) {
+          // Intercept default browser URL navigation on links
+          const preventNav = (e) => {
+            e.preventDefault();
+          };
+          linkEl.addEventListener("click", preventNav, { once: true });
+        }
+
         el.dispatchEvent(new MouseEvent("pointerdown", opts));
         el.dispatchEvent(new MouseEvent("mousedown", opts));
         el.dispatchEvent(new MouseEvent("pointerup", opts));
         el.dispatchEvent(new MouseEvent("mouseup", opts));
         el.dispatchEvent(new MouseEvent("click", opts));
-        el.click();
+
+        if (!linkEl) {
+          try {
+            el.click();
+          } catch (e) {}
+        }
       }
 
       // ═══ HELPER: Extract clean plain text from an element (strip HTML) ═══
@@ -451,6 +564,8 @@
           "phone number": USER_PROFILE.phone,
           mobile: USER_PROFILE.phone,
           "mobile number": USER_PROFILE.phone,
+          "phone country code": USER_PROFILE.phoneCountryCode || USER_PROFILE.countryCode || "India (+91)",
+          "country code": USER_PROFILE.phoneCountryCode || USER_PROFILE.countryCode || "India (+91)",
           city: USER_PROFILE.city,
           "current city": USER_PROFILE.city,
           location: USER_PROFILE.city,
@@ -543,14 +658,153 @@
       }
 
       // ═══════════════════════════════════════════════════
+      // ACTION: waitForModal — Wait (inside the page) for the
+      // Easy Apply modal to appear. Checks main document AND
+      // same-origin iframes. Returns a Promise which Electron
+      // awaits automatically via executeJavaScript.
+      // ═══════════════════════════════════════════════════
+      if (ACTION === "waitForModal") {
+        var maxWait = (OPTIONS.maxWait) || 20000;
+
+        // Immediate check (covers the case where modal was already open)
+        var immediateModal = getEasyApplyModal();
+        if (immediateModal) {
+          result.success = true;
+          result.data = { found: true, waitedMs: 0, source: "immediate" };
+          return JSON.stringify(result);
+        }
+
+        // Return a Promise — Electron's executeJavaScript awaits it automatically
+        return new Promise(function(resolve) {
+          var startTime = Date.now();
+          var resolved = false;
+
+          function finish(success, source) {
+            if (resolved) return;
+            resolved = true;
+            try { mainObserver.disconnect(); } catch(e) {}
+            clearInterval(pollId);
+            clearTimeout(toutId);
+            if (success) {
+              resolve(JSON.stringify({
+                action: ACTION, success: true, error: null,
+                data: { found: true, waitedMs: Date.now() - startTime, source: source || "observer" }
+              }));
+            } else {
+              // Detailed timeout diagnostic — includes iframe count
+              var iframeCount = 0;
+              var iframeHasHeader = false;
+              try {
+                var frs = document.querySelectorAll("iframe");
+                iframeCount = frs.length;
+                for (var fi = 0; fi < frs.length; fi++) {
+                  try {
+                    var fd = frs[fi].contentDocument;
+                    if (fd && fd.querySelector("#jobs-apply-header, .jobs-easy-apply-modal")) {
+                      iframeHasHeader = true;
+                      break;
+                    }
+                  } catch(e) {}
+                }
+              } catch(e) {}
+              resolve(JSON.stringify({
+                action: ACTION, success: false, error: "MODAL_WAIT_TIMEOUT",
+                data: {
+                  dialogs: document.querySelectorAll('[role="dialog"]').length,
+                  header: !!document.querySelector("#jobs-apply-header"),
+                  eaModal: !!document.querySelector(".jobs-easy-apply-modal"),
+                  iframes: iframeCount,
+                  iframeHasModal: iframeHasHeader
+                }
+              }));
+            }
+          }
+
+          // Helper to start observing an iframe's document
+          function observeIframe(iframe) {
+            try {
+              var iDoc = iframe.contentDocument ||
+                        (iframe.contentWindow && iframe.contentWindow.document);
+              if (!iDoc) return;
+              // Check immediately
+              try {
+                var iResult = (function findInDoc(doc) {
+                  if (!doc) return null;
+                  return doc.querySelector("#jobs-apply-header, .jobs-easy-apply-modal, [data-test-modal-id='easy-apply-modal'], [aria-labelledby='jobs-apply-header']");
+                })(iDoc);
+                if (iResult) { finish(true, "iframe-immediate"); return; }
+              } catch(e) {}
+              // Observe mutations inside this iframe
+              try {
+                mainObserver.observe(iDoc, { childList: true, subtree: true });
+              } catch(e) {}
+            } catch(e) {}
+          }
+
+          // Main MutationObserver watches BOTH the main document AND iframes
+          var mainObserver = new MutationObserver(function(mutations) {
+            // First check if modal now exists
+            if (getEasyApplyModal()) { finish(true, "mutation"); return; }
+            // Also watch any newly added iframes
+            for (var mi = 0; mi < mutations.length; mi++) {
+              var added = mutations[mi].addedNodes;
+              for (var ai = 0; ai < added.length; ai++) {
+                var node = added[ai];
+                if (!node || node.nodeType !== 1) continue;
+                if (node.tagName === "IFRAME") {
+                  node.addEventListener("load", function() { observeIframe(node); });
+                  observeIframe(node); // check immediately if already loaded
+                } else {
+                  // Check for iframes nested inside newly added nodes
+                  try {
+                    var nested = node.querySelectorAll("iframe");
+                    for (var ni = 0; ni < nested.length; ni++) {
+                      nested[ni].addEventListener("load", (function(f) { return function() { observeIframe(f); }; })(nested[ni]));
+                      observeIframe(nested[ni]);
+                    }
+                  } catch(e) {}
+                }
+              }
+            }
+          });
+
+          // Observe main document
+          mainObserver.observe(document.documentElement, { childList: true, subtree: true });
+
+          // Also observe any iframes that already exist in the page
+          try {
+            var existingFrames = document.querySelectorAll("iframe");
+            for (var efi = 0; efi < existingFrames.length; efi++) {
+              var ef = existingFrames[efi];
+              if (ef.contentDocument && ef.contentDocument.readyState !== "loading") {
+                observeIframe(ef);
+              } else {
+                ef.addEventListener("load", (function(f) { return function() { observeIframe(f); }; })(ef));
+              }
+            }
+          } catch(e) {}
+
+          // Polling fallback every 400ms (catches edge cases the observer misses)
+          var pollId = setInterval(function() {
+            if (getEasyApplyModal()) finish(true, "poll");
+          }, 400);
+
+          var toutId = setTimeout(function() { finish(false); }, maxWait);
+        });
+      }
+
+      // ═══════════════════════════════════════════════════
       // ACTION: scanJobs — Find all job cards on search page
+
       // Uses REAL LinkedIn selectors from 2025 DOM
       // ═══════════════════════════════════════════════════
       if (ACTION === "scanJobs") {
         const jobs = [];
 
-        // Primary: LinkedIn now uses <li data-occludable-job-id> as the card container
+        // Support both new componentkey DOM layout and legacy data-occludable-job-id layout
         const cardSelectors = [
+          '[componentkey^="job-card-component-ref-"]',
+          "div[componentkey^=\"job-card-component-ref-\"]",
           "[data-occludable-job-id]",
           "div.job-card-job-posting-card-wrapper[data-job-id]",
           ".job-card-container[data-job-id]",
@@ -568,82 +822,149 @@
         }
 
         cards.forEach((card, idx) => {
-          // Get the stable job ID from data attribute
-          const jobId =
+          // Get the stable job ID from componentkey or data attribute
+          let jobId =
             card.getAttribute("data-occludable-job-id") ||
             card.getAttribute("data-job-id") ||
             "";
 
-          // Title: inside artdeco-entity-lockup__title
-          const titleEl = card.querySelector(
-            '.job-card-job-posting-card-wrapper__title span[aria-hidden="true"] strong, ' +
-              '.artdeco-entity-lockup__title span[aria-hidden="true"] strong, ' +
-              '.artdeco-entity-lockup__title span[aria-hidden="true"], ' +
-              ".artdeco-entity-lockup__title a, " +
-              ".job-card-list__title, " +
-              "a.job-card-container__link",
-          );
-
-          // Company: inside artdeco-entity-lockup__subtitle (new DOM uses <span>)
-          const companyEl = card.querySelector(
-            ".artdeco-entity-lockup__subtitle span, " +
-              ".artdeco-entity-lockup__subtitle div, " +
-              ".artdeco-entity-lockup__subtitle, " +
-              ".job-card-container__primary-description, " +
-              ".job-card-container__company-name",
-          );
-
-          // Location: inside artdeco-entity-lockup__caption li span (new DOM structure)
-          const locationEl = card.querySelector(
-            ".artdeco-entity-lockup__caption li span, " +
-              ".artdeco-entity-lockup__caption div, " +
-              ".artdeco-entity-lockup__caption, " +
-              ".job-card-container__metadata-item",
-          );
-
-          let title = `Job ${idx + 1}`;
-          if (titleEl) {
-            const ariaHiddenSpan = titleEl.querySelector(
-              'span[aria-hidden="true"]',
-            );
-            title = (ariaHiddenSpan || titleEl).textContent
-              .trim()
-              .replace(/\s+/g, " ");
+          if (!jobId) {
+            const compKey = card.getAttribute("componentkey") || "";
+            const match = compKey.match(/job-card-component-ref-(\d+)/);
+            if (match) {
+              jobId = match[1];
+            }
           }
 
-          let company = ``;
-          if (companyEl) {
-            const ariaHiddenSpan = companyEl.querySelector(
-              'span[aria-hidden="true"]',
+          let title = "";
+          let company = "";
+          let location = "";
+
+          // Check if this card uses the new LinkedIn component-key DOM layout
+          const isNewDomCard =
+            card.hasAttribute("componentkey") &&
+            card.getAttribute("componentkey").includes("job-card-component-ref-");
+
+          if (isNewDomCard) {
+            const paragraphs = Array.from(card.querySelectorAll("p"));
+
+            // Title: first paragraph or paragraph containing _83f69eb5 / aria-hidden title span
+            const titleSpan = card.querySelector(
+              'p span._83f69eb5, p span[aria-hidden="true"]',
             );
-            company = (ariaHiddenSpan || companyEl).textContent
-              .trim()
-              .replace(/\s+/g, " ");
+            if (titleSpan) {
+              const clone = titleSpan.cloneNode(true);
+              clone.querySelectorAll("svg, button, [role='img']").forEach((el) => el.remove());
+              title = clone.textContent.trim().replace(/\s+/g, " ");
+            } else if (paragraphs[0]) {
+              const clone = paragraphs[0].cloneNode(true);
+              clone.querySelectorAll("svg, button, [role='img']").forEach((el) => el.remove());
+              title = clone.textContent.trim().replace(/\s+/g, " ");
+            }
+
+            // Company: inside div.b4f30b99 or 2nd paragraph
+            const companyP =
+              card.querySelector(".b4f30b99 p") ||
+              (paragraphs[1] &&
+              paragraphs[1] !== card.querySelector('p span._83f69eb5')?.closest('p')
+                ? paragraphs[1]
+                : null);
+            if (companyP) {
+              const clone = companyP.cloneNode(true);
+              clone.querySelectorAll("svg").forEach((el) => el.remove());
+              company = clone.textContent.trim().replace(/\s+/g, " ");
+            }
+
+            // Location: paragraph following company paragraph
+            for (let i = 1; i < paragraphs.length; i++) {
+              const p = paragraphs[i];
+              const txt = p.textContent.trim().replace(/\s+/g, " ");
+              if (
+                txt &&
+                txt !== company &&
+                !/^(Viewed|Posted|Easy Apply|\d+ (days|weeks|months|hours) ago|Actively reviewing|.*alumni work here)$/i.test(
+                  txt,
+                ) &&
+                !txt.includes("Easy Apply")
+              ) {
+                location = txt;
+                break;
+              }
+            }
           }
 
-          const location =
-            locationEl?.textContent?.replace(/\s+/g, " ").trim() || "";
+          // Fallback title extraction for legacy DOM structures
+          if (!title) {
+            const titleEl = card.querySelector(
+              '.job-card-job-posting-card-wrapper__title span[aria-hidden="true"] strong, ' +
+                '.artdeco-entity-lockup__title span[aria-hidden="true"] strong, ' +
+                '.artdeco-entity-lockup__title span[aria-hidden="true"], ' +
+                ".artdeco-entity-lockup__title a, " +
+                ".job-card-list__title, " +
+                "a.job-card-container__link",
+            );
+            if (titleEl) {
+              const ariaHiddenSpan = titleEl.querySelector('span[aria-hidden="true"]');
+              title = (ariaHiddenSpan || titleEl).textContent.trim().replace(/\s+/g, " ");
+            }
+          }
+          if (!title) {
+            title = `Job ${idx + 1}`;
+          }
 
-          // Check footer for "Applied" / "Easy Apply" — new DOM uses job-card-container__footer-item
+          // Fallback company extraction for legacy DOM structures
+          if (!company) {
+            const companyEl = card.querySelector(
+              ".artdeco-entity-lockup__subtitle span, " +
+                ".artdeco-entity-lockup__subtitle div, " +
+                ".artdeco-entity-lockup__subtitle, " +
+                ".job-card-container__primary-description, " +
+                ".job-card-container__company-name",
+            );
+            if (companyEl) {
+              const ariaHiddenSpan = companyEl.querySelector('span[aria-hidden="true"]');
+              company = (ariaHiddenSpan || companyEl).textContent.trim().replace(/\s+/g, " ");
+            }
+          }
+
+          // Fallback location extraction for legacy DOM structures
+          if (!location) {
+            const locationEl = card.querySelector(
+              ".artdeco-entity-lockup__caption li span, " +
+                ".artdeco-entity-lockup__caption div, " +
+                ".artdeco-entity-lockup__caption, " +
+                ".job-card-container__metadata-item",
+            );
+            if (locationEl) {
+              location = locationEl.textContent.trim().replace(/\s+/g, " ");
+            }
+          }
+
+          const fullCardText = card.textContent || "";
+
+          // Check for Easy Apply
+          const isEasyApply =
+            /Easy Apply/i.test(fullCardText) ||
+            !!card.querySelector("#linkedin-bug-small");
+
+          // Check footer for "Applied" / "Easy Apply"
           const footerItems = card.querySelectorAll(
             ".job-card-container__footer-item, " +
               ".job-card-list__footer-wrapper li",
           );
           let isApplied = false;
-          let isEasyApply = false;
           footerItems.forEach((fi) => {
             const txt = fi.textContent.trim().toLowerCase();
             if (txt === "applied") isApplied = true;
-            if (txt.includes("easy apply")) isEasyApply = true;
           });
-          // Also check other applied indicators
+
           if (!isApplied) {
             const appliedBadge = card.querySelector(
               ".job-card-container__footer-item--applied, .artdeco-inline-feedback--success",
             );
             isApplied = !!appliedBadge;
           }
-          // Check t-bold footer item for "applied" state
+
           const boldFooterItem = card.querySelector(
             ".job-card-container__footer-item.t-bold",
           );
@@ -652,6 +973,13 @@
             boldFooterItem.textContent.trim().toLowerCase() === "applied"
           ) {
             isApplied = true;
+          }
+
+          if (!isApplied) {
+            const textWithoutEasyApply = fullCardText.replace(/Easy Apply/gi, "");
+            if (/\bApplied\b/i.test(textWithoutEasyApply)) {
+              isApplied = true;
+            }
           }
 
           jobs.push({
@@ -681,20 +1009,20 @@
       else if (ACTION === "clickJob") {
         const JOB_ID = OPTIONS.jobId || "";
 
-        // Primary: find the <li> container by stable data-occludable-job-id
+        // Primary: find card by componentkey or stable data attributes
         let card = null;
         if (JOB_ID) {
-          card = document.querySelector(`[data-occludable-job-id="${JOB_ID}"]`);
-          if (!card)
-            card = document.querySelector(
-              `div.job-card-job-posting-card-wrapper[data-job-id="${JOB_ID}"]`,
-            );
-          if (!card) card = document.querySelector(`[data-job-id="${JOB_ID}"]`);
+          card =
+            document.querySelector(`[componentkey="job-card-component-ref-${JOB_ID}"]`) ||
+            document.querySelector(`[data-occludable-job-id="${JOB_ID}"]`) ||
+            document.querySelector(`div.job-card-job-posting-card-wrapper[data-job-id="${JOB_ID}"]`) ||
+            document.querySelector(`[data-job-id="${JOB_ID}"]`);
         }
 
         // Fallback: find by index
         if (!card) {
           const fallbackSelectors = [
+            '[componentkey^="job-card-component-ref-"]',
             "[data-occludable-job-id]",
             "div.job-card-job-posting-card-wrapper[data-job-id]",
             ".job-card-container[data-job-id]",
@@ -709,52 +1037,22 @@
         }
 
         if (card) {
-          // LinkedIn's new DOM: <a> tags have class "disabled" and navigating them
-          // causes page navigation. Instead, we must click the job-card-container div
-          // or the title <strong> element — these trigger the right-pane detail view.
-
-          // First priority: the inner job-card-container div (the real interactive element)
-          let clickTarget = card.querySelector("div.job-card-container");
-
-          // Second priority: the <strong> title text inside the card (also works)
-          if (!clickTarget) {
-            clickTarget = card.querySelector(
+          // Find interactive click target
+          let clickTarget =
+            card.querySelector('[role="button"]') ||
+            card.querySelector("div.job-card-container") ||
+            card.querySelector(
               '.artdeco-entity-lockup__title span[aria-hidden="true"] strong, ' +
                 '.job-card-job-posting-card-wrapper__title span[aria-hidden="true"] strong',
-            );
-          }
-
-          // Third priority: the title span itself (not the <a>)
-          if (!clickTarget) {
-            clickTarget = card.querySelector(
+            ) ||
+            card.querySelector(
               '.artdeco-entity-lockup__title span[aria-hidden="true"], ' +
-                '.job-card-job-posting-card-wrapper__title span[aria-hidden="true"]',
-            );
-          }
+                '.job-card-job-posting-card-wrapper__title span[aria-hidden="true"], ' +
+                'p span._83f69eb5',
+            ) ||
+            card;
 
-          // Last resort: click the card container itself, but prevent link navigation
-          if (!clickTarget) {
-            clickTarget = card;
-          }
-
-          // Scroll into view and click
-          clickTarget.scrollIntoView({ behavior: "instant", block: "center" });
-          const rect = clickTarget.getBoundingClientRect();
-          const cx = rect.left + rect.width / 2;
-          const cy = rect.top + rect.height / 2;
-          const opts = {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-            clientX: cx,
-            clientY: cy,
-            button: 0,
-          };
-          clickTarget.dispatchEvent(new MouseEvent("pointerdown", opts));
-          clickTarget.dispatchEvent(new MouseEvent("mousedown", opts));
-          clickTarget.dispatchEvent(new MouseEvent("pointerup", opts));
-          clickTarget.dispatchEvent(new MouseEvent("mouseup", opts));
-          clickTarget.dispatchEvent(new MouseEvent("click", opts));
+          realClick(clickTarget);
 
           result.success = true;
           result.data = { clicked: JOB_INDEX, jobId: JOB_ID };
@@ -768,74 +1066,93 @@
       // ACTION: clickEasyApply — Find and click the Easy Apply button
       // ═══════════════════════════════════════════════════
       else if (ACTION === "clickEasyApply") {
-        // Try the exact button from the real DOM first
-        let btn = document.querySelector("#jobs-apply-button-id");
-        let isEasyApply = btn
-          ? btn.textContent.trim().toLowerCase().includes("easy apply")
-          : false;
+        const checkBtn = (b) => {
+          if (!b || !isVisible(b)) return false;
+          const text = (b.textContent || "").trim().toLowerCase();
+          const ariaLabel = (b.getAttribute("aria-label") || "").toLowerCase();
+          const href = (b.getAttribute("href") || "").toLowerCase();
+          return (
+            text.includes("easy apply") ||
+            ariaLabel.includes("easy apply") ||
+            href.includes("opensduiapplyflow=true")
+          );
+        };
 
-        // Fallback selectors
-        if (!btn || !isEasyApply) {
+        let btn = null;
+
+        // Strategy 1: Exact ID button
+        const idBtn = document.querySelector("#jobs-apply-button-id");
+        if (checkBtn(idBtn)) {
+          btn = idBtn;
+        }
+
+        // Strategy 2: Targeted selectors (supporting both <button> and <a> tags)
+        if (!btn) {
           const easyApplySelectors = [
-            ".jobs-apply-button--top-card button.jobs-apply-button",
+            "a[aria-label*='Easy Apply']",
+            "a[aria-label*='Easy apply']",
+            "button[aria-label*='Easy Apply']",
+            "button[aria-label*='Easy apply']",
+            "a[href*='openSDUIApplyFlow=true']",
+            "a[href*='/apply/']",
+            ".jobs-apply-button--top-card button",
+            ".jobs-apply-button--top-card a",
             "button.jobs-apply-button",
+            "a.jobs-apply-button",
             ".jobs-apply-button--top-card .artdeco-button--primary",
             ".jobs-s-apply button",
+            ".jobs-s-apply a",
             "button.jobs-apply-button.artdeco-button--primary",
+            "[data-job-search-apply-button]",
+            "[data-easy-apply-button]",
+            ".jobs-unified-top-card button",
+            ".jobs-unified-top-card a",
+            ".jobs-details-top-card button",
+            ".jobs-details-top-card a",
+            ".job-details-jobs-unified-top-card__container button",
+            ".job-details-jobs-unified-top-card__container a",
           ];
 
           for (const sel of easyApplySelectors) {
             const candidates = document.querySelectorAll(sel);
             for (const candidate of candidates) {
-              const text = candidate.textContent.trim().toLowerCase();
-              const ariaLabel = (
-                candidate.getAttribute("aria-label") || ""
-              ).toLowerCase();
-              if (
-                text.includes("easy apply") ||
-                ariaLabel.includes("easy apply")
-              ) {
+              if (checkBtn(candidate)) {
                 btn = candidate;
-                isEasyApply = true;
                 break;
               }
             }
-            if (btn && isEasyApply) break;
+            if (btn) break;
           }
         }
 
-        // Final fallback: any visible button with "Easy Apply" text
-        if (!btn || !isEasyApply) {
-          const allBtns = document.querySelectorAll("button");
+        // Strategy 3: Any visible button, link, or role="button" containing "Easy Apply"
+        if (!btn) {
+          const allBtns = document.querySelectorAll(
+            "button, a, [role='button'], [aria-label*='Easy Apply'], [aria-label*='Easy apply']",
+          );
           for (const b of allBtns) {
-            if (
-              b.textContent.trim().toLowerCase().includes("easy apply") &&
-              b.offsetParent !== null
-            ) {
+            if (checkBtn(b)) {
               btn = b;
-              isEasyApply = true;
               break;
             }
           }
         }
 
-        if (btn && isEasyApply) {
+        if (btn) {
           realClick(btn);
           result.success = true;
           result.data = { isEasyApply: true };
         } else {
           const appliedEl = document.querySelector(
-            ".jobs-apply-button--applied, .artdeco-inline-feedback--success",
+            ".jobs-apply-button--applied, .artdeco-inline-feedback--success, [data-test-icon='check-small']",
           );
-          const applyBtnText =
-            document.querySelector(".jobs-apply-button")?.textContent || "";
-          if (appliedEl || applyBtnText.includes("Applied")) {
+          const applyBtn = document.querySelector("button.jobs-apply-button, #jobs-apply-button-id");
+          const applyBtnText = (applyBtn?.textContent || "").toLowerCase();
+
+          if (appliedEl || applyBtnText.includes("applied")) {
             result.success = false;
             result.error = "ALREADY_APPLIED";
-          } else if (
-            document.querySelector("button.jobs-apply-button") &&
-            !applyBtnText.toLowerCase().includes("easy apply")
-          ) {
+          } else if (applyBtn && !applyBtnText.includes("easy apply")) {
             result.success = false;
             result.error = "EXTERNAL_APPLY";
           } else {
@@ -849,13 +1166,25 @@
       // ACTION: fillStep — Scan & fill current modal step
       // ═══════════════════════════════════════════════════
       else if (ACTION === "fillStep") {
-        const modal = document.querySelector(
-          '.jobs-easy-apply-modal, .artdeco-modal--layer-default, [role="dialog"][aria-labelledby*="easy-apply"]',
-        );
+        const modal = getEasyApplyModal();
 
         if (!modal) {
           result.success = false;
           result.error = "NO_MODAL_FOUND";
+          // Breadcrumb: what WAS on the page when we found no modal?
+          try {
+            result.data = {
+              diagnostic:
+                "dialogs=" +
+                document.querySelectorAll('[role="dialog"]').length +
+                " easyApplyModals=" +
+                document.querySelectorAll(".jobs-easy-apply-modal").length +
+                " overlays=" +
+                document.querySelectorAll(".artdeco-modal-overlay").length +
+                " applyHeader=" +
+                (document.querySelector("#jobs-apply-header") ? 1 : 0),
+            };
+          } catch (e) {}
           return JSON.stringify(result);
         }
 
@@ -1227,7 +1556,7 @@
             if (
               !isBooleanSelect &&
               matchToProfile(label) &&
-              (!currentVal || OPTIONS.overwrite)
+              (isBlank || OPTIONS.overwrite)
             ) {
               // Profile-based fill: only for non-boolean selects where profile has a value
               const profileVal = matchToProfile(label);
@@ -1698,9 +2027,7 @@
           return JSON.stringify(result);
         }
 
-        const modal = document.querySelector(
-          '.jobs-easy-apply-modal, .artdeco-modal--layer-default, [role="dialog"]',
-        );
+        const modal = getEasyApplyModal();
         if (!modal) {
           result.success = false;
           result.error = "NO_MODAL_FOUND";
@@ -1780,9 +2107,7 @@
       // ACTION: submitApp — Specifically click Submit
       // ═══════════════════════════════════════════════════
       else if (ACTION === "submitApp") {
-        const modal = document.querySelector(
-          '.jobs-easy-apply-modal, .artdeco-modal--layer-default, [role="dialog"]',
-        );
+        const modal = getEasyApplyModal();
         if (!modal) {
           result.success = false;
           result.error = "NO_MODAL_FOUND";
@@ -1874,9 +2199,7 @@
       // ACTION: checkStatus — Check if application was submitted
       // ═══════════════════════════════════════════════════
       else if (ACTION === "checkStatus") {
-        const modal = document.querySelector(
-          ".jobs-easy-apply-modal, .artdeco-modal--layer-default",
-        );
+        const modal = getEasyApplyModal();
         const successMsg = document.querySelector(
           ".artdeco-inline-feedback--success, .artdeco-toast-item--visible",
         );
@@ -1888,13 +2211,20 @@
         const applyBtn = document.querySelector(".jobs-apply-button");
         const showsApplied = applyBtn?.textContent?.includes("Applied");
 
-        if (successMsg || successText || showsApplied || !modal) {
+        if (successMsg || successText || showsApplied) {
           result.success = true;
           result.data = {
             applicationSent: true,
             hasSuccessMessage: !!successMsg || successText,
             showsApplied: !!showsApplied,
             modalDismissed: !modal,
+          };
+        } else if (!modal) {
+          result.success = false;
+          result.data = {
+            applicationSent: false,
+            modalStillOpen: false,
+            validationErrors: [],
           };
         } else {
           const errorMsgs = modal.querySelectorAll(
@@ -1947,15 +2277,16 @@
             }
           } else {
             const listContainer = document.querySelector(
-              ".jobs-search-results-list, .scaffold-layout__list",
+              '[data-testid="lazy-column"], [data-component-type="LazyColumn"], [componentkey="SearchResultsMainContent"], .jobs-search-results-list, .scaffold-layout__list',
             );
             if (listContainer) {
               listContainer.scrollTop = listContainer.scrollHeight;
               result.success = true;
               result.data = { action: "scrolled" };
             } else {
-              result.success = false;
-              result.error = "NO_LIST_CONTAINER";
+              window.scrollBy(0, 500);
+              result.success = true;
+              result.data = { action: "windowScrolled" };
             }
           }
         }

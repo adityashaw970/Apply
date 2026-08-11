@@ -101,6 +101,7 @@ body {
   text-transform: uppercase;
   background: linear-gradient(135deg, var(--accent-light), var(--accent));
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -705,7 +706,7 @@ body {
 }
 
 .left-panel.open {
-  width: 340px;
+  width: 400px;
 }
 
 /* ─── RIGHT Side Panel (History) ─── */
@@ -1589,3 +1590,117 @@ body {
 .tool-btn.screenshot-flash {
   animation: ss-flash 0.4s ease;
 }
+
+/* Bumble Button Styling */
+#btn-bumble-start {
+  transition: all 0.2s ease;
+}
+#btn-bumble-start:hover {
+  box-shadow: 0 0 20px rgba(245, 193, 36, 0.4) !important;
+  transform: translateY(-1px);
+}
+
+/* ═══ Direct Job Radar Styles ═══ */
+@keyframes radar-pulse-glow {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; filter: drop-shadow(0 0 8px rgba(99,102,241,0.8)); }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+.radar-pulse-icon {
+  animation: radar-pulse-glow 2.5s infinite ease-in-out;
+}
+
+.radar-job-card {
+  background: rgba(22, 22, 38, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.radar-job-card:hover {
+  background: rgba(30, 30, 52, 0.85);
+  border-color: rgba(99, 102, 241, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.radar-score-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.radar-score-badge.top {
+  background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(217,119,6,0.3));
+  color: #fbbf24;
+  border: 1px solid rgba(245,158,11,0.5);
+}
+
+.radar-score-badge.good {
+  background: linear-gradient(135deg, rgba(16,185,129,0.2), rgba(5,150,105,0.3));
+  color: #34d399;
+  border: 1px solid rgba(16,185,129,0.4);
+}
+
+.radar-score-badge.neutral {
+  background: rgba(148,163,184,0.15);
+  color: #cbd5e1;
+  border: 1px solid rgba(148,163,184,0.3);
+}
+
+.radar-ats-tag {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.radar-ats-tag.greenhouse { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+.radar-ats-tag.lever { background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3); }
+.radar-ats-tag.ashby { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+.radar-ats-tag.smartrecruiters { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+.radar-ats-tag.workday { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+.radar-ats-tag.generic { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }
+
+.radar-action-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ccc;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.15s ease;
+}
+
+.radar-action-btn:hover {
+  background: rgba(99, 102, 241, 0.25);
+  color: #fff;
+  border-color: #6366f1;
+}
+
+.radar-action-btn.apply-btn {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #fff;
+  border: none;
+  font-weight: 600;
+}
+
+.radar-action-btn.apply-btn:hover {
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+  transform: translateY(-1px);
+}
+
